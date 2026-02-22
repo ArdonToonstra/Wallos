@@ -246,12 +246,14 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       $print[$id]['payment_method_id'] = $paymentMethodId;
       $print[$id]['category_id'] = $subscription['category_id'];
       $print[$id]['payer_user_id'] = $subscription['payer_user_id'];
-      $print[$id]['price'] = floatval($subscription['price']);
+      $sharePercentage = isset($subscription['share_percentage']) ? (int) $subscription['share_percentage'] : 100;
+      $print[$id]['price'] = floatval($subscription['price']) * ($sharePercentage / 100);
       $print[$id]['progress'] = getSubscriptionProgress($cycle, $frequency, $subscription['next_payment']);
       $print[$id]['inactive'] = $subscription['inactive'];
       $print[$id]['url'] = $subscription['url'];
       $print[$id]['notes'] = $subscription['notes'];
       $print[$id]['replacement_subscription_id'] = $subscription['replacement_subscription_id'];
+      $print[$id]['share_percentage'] = isset($subscription['share_percentage']) ? $subscription['share_percentage'] : 100;
 
       if (isset($settings['convertCurrency']) && $settings['convertCurrency'] === 'true' && $currencyId != $mainCurrencyId) {
         $print[$id]['price'] = getPriceConverted($print[$id]['price'], $currencyId, $db);
@@ -308,9 +310,8 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
 
     <div class="form-group-inline">
       <input type="text" id="name" name="name" autocomplete="off"
-        placeholder="<?= translate('subscription_name', $i18n) ?>"
-        onchange="setSearchButtonStatus()" onkeypress="this.onchange();" onpaste="this.onchange();"
-        oninput="this.onchange();" required>
+        placeholder="<?= translate('subscription_name', $i18n) ?>" onchange="setSearchButtonStatus()"
+        onkeypress="this.onchange();" onpaste="this.onchange();" oninput="this.onchange();" required>
       <label for="logo" class="logo-preview">
         <img src="" alt="<?= translate('logo_preview', $i18n) ?>" id="form-logo">
       </label>
@@ -344,6 +345,12 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
         }
         ?>
       </select>
+    </div>
+
+    <div class="form-group">
+      <label for="share_percentage">Your Share (%)</label>
+      <input type="number" step="1" min="1" max="100" id="share_percentage" name="share_percentage" autocomplete="off"
+        placeholder="100" value="100" required>
     </div>
 
     <div class="form-group">

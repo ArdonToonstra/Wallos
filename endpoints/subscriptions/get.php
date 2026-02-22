@@ -174,7 +174,8 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
     $print[$id]['payment_method_id'] = $paymentMethodId;
     $print[$id]['category_id'] = $subscription['category_id'];
     $print[$id]['payer_user_id'] = $subscription['payer_user_id'];
-    $print[$id]['price'] = floatval($subscription['price']);
+    $sharePercentage = isset($subscription['share_percentage']) ? (int) $subscription['share_percentage'] : 100;
+    $print[$id]['price'] = floatval($subscription['price']) * ($sharePercentage / 100);
     $print[$id]['progress'] = getSubscriptionProgress($cycle, $frequency, $subscription['next_payment']);
     $print[$id]['inactive'] = $subscription['inactive'];
     $print[$id]['url'] = $subscription['url'] ?? "";
@@ -210,7 +211,7 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
       return $categories[$a['category_id']]['order'] - $categories[$b['category_id']]['order'];
     });
   }
-  
+
   if ($sortOrder == "payment_method_id") {
     usort($print, function ($a, $b) use ($payment_methods) {
       return $payment_methods[$a['payment_method_id']]['order'] - $payment_methods[$b['payment_method_id']]['order'];

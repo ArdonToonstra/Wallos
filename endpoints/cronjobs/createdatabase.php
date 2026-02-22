@@ -120,7 +120,9 @@ if (!file_exists($databaseFile)) {
     (14, 'Software'),
     (15, 'Technology'),
     (16, 'Cloud Services'),
-    (17, 'Charity & Donations')");
+    (17, 'Charity & Donations'),
+    (18, 'Investing'),
+    (19, 'Housing')");
 
     $db->exec("INSERT INTO cycles (id, days, name) VALUES
     (1, 1, 'Daily'),

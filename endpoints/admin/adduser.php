@@ -57,6 +57,8 @@ $categories = [
     ['id' => 15, 'name' => 'Technology'],
     ['id' => 16, 'name' => 'Cloud Services'],
     ['id' => 17, 'name' => 'Charity & Donations'],
+    ['id' => 18, 'name' => 'Investing'],
+    ['id' => 19, 'name' => 'Housing']
 ];
 
 $payment_methods = [

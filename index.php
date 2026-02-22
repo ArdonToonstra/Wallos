@@ -61,7 +61,7 @@ $user = $result->fetchArray(SQLITE3_ASSOC);
 $first_name = $user['firstname'] ?? $user['username'] ?? '';
 
 // Fetch the next 3 enabled subscriptions up for payment
-$stmt = $db->prepare("SELECT id, logo, name, price, currency_id, next_payment, inactive FROM subscriptions WHERE user_id = :userId AND next_payment >= date('now') AND inactive = 0 ORDER BY next_payment ASC LIMIT 3");
+$stmt = $db->prepare("SELECT id, logo, name, price, share_percentage, currency_id, next_payment, inactive FROM subscriptions WHERE user_id = :userId AND next_payment >= date('now') AND inactive = 0 ORDER BY next_payment ASC LIMIT 3");
 $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
 $result = $stmt->execute();
 $upcomingSubscriptions = [];
@@ -70,7 +70,7 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
 }
 
 // Fetch enabled subscriptions with manual renewal that are overdue
-$stmt = $db->prepare("SELECT id, logo, name, price, currency_id, next_payment, inactive, auto_renew FROM subscriptions WHERE user_id = :userId AND next_payment < date('now') AND auto_renew = 0 AND inactive = 0 ORDER BY next_payment ASC");
+$stmt = $db->prepare("SELECT id, logo, name, price, share_percentage, currency_id, next_payment, inactive, auto_renew FROM subscriptions WHERE user_id = :userId AND next_payment < date('now') AND auto_renew = 0 AND inactive = 0 ORDER BY next_payment ASC");
 $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
 $result = $stmt->execute();
 $overdueSubscriptions = [];
@@ -108,7 +108,8 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                     foreach ($overdueSubscriptions as $subscription) {
                         $subscriptionLogo = "images/uploads/logos/" . $subscription['logo'];
                         $subscriptionName = htmlspecialchars($subscription['name']);
-                        $subscriptionPrice = $subscription['price'];
+                        $sharePercentage = isset($subscription['share_percentage']) ? (int) $subscription['share_percentage'] : 100;
+                        $subscriptionPrice = floatval($subscription['price']) * ($sharePercentage / 100);
                         $subscriptionCurrency = $subscription['currency_id'];
                         $subscriptionNextPayment = $subscription['next_payment'];
                         $subscriptionDisplayNextPayment = date('F j', strtotime($subscriptionNextPayment));
@@ -157,7 +158,8 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                     foreach ($upcomingSubscriptions as $subscription) {
                         $subscriptionLogo = "images/uploads/logos/" . $subscription['logo'];
                         $subscriptionName = htmlspecialchars($subscription['name']);
-                        $subscriptionPrice = $subscription['price'];
+                        $sharePercentage = isset($subscription['share_percentage']) ? (int) $subscription['share_percentage'] : 100;
+                        $subscriptionPrice = floatval($subscription['price']) * ($sharePercentage / 100);
                         $subscriptionCurrency = $subscription['currency_id'];
                         $subscriptionNextPayment = $subscription['next_payment'];
                         $subscriptionDisplayNextPayment = date('F j', strtotime($subscriptionNextPayment));

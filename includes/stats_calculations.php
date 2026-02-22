@@ -42,11 +42,11 @@ $stmt = $db->prepare($query);
 $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
 $result = $stmt->execute();
 while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-  $categoryId = $row['id'];
-  $categories[$categoryId] = $row;
-  $categories[$categoryId]['count'] = 0;
-  $categoryCost[$categoryId]['cost'] = 0;
-  $categoryCost[$categoryId]['name'] = $row['name'];
+    $categoryId = $row['id'];
+    $categories[$categoryId] = $row;
+    $categories[$categoryId]['count'] = 0;
+    $categoryCost[$categoryId]['cost'] = 0;
+    $categoryCost[$categoryId]['name'] = $row['name'];
 }
 
 // Get payment methods
@@ -56,11 +56,11 @@ $stmt = $db->prepare($query);
 $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
 $result = $stmt->execute();
 while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-  $paymentMethodId = $row['id'];
-  $paymentMethods[$paymentMethodId] = $row;
-  $paymentMethods[$paymentMethodId]['count'] = 0;
-  $paymentMethodsCount[$paymentMethodId]['count'] = 0;
-  $paymentMethodsCount[$paymentMethodId]['name'] = $row['name'];
+    $paymentMethodId = $row['id'];
+    $paymentMethods[$paymentMethodId] = $row;
+    $paymentMethods[$paymentMethodId]['count'] = 0;
+    $paymentMethodsCount[$paymentMethodId]['count'] = 0;
+    $paymentMethodsCount[$paymentMethodId]['name'] = $row['name'];
 }
 
 //Get household members
@@ -70,11 +70,11 @@ $stmt = $db->prepare($query);
 $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
 $result = $stmt->execute();
 while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-  $memberId = $row['id'];
-  $members[$memberId] = $row;
-  $members[$memberId]['count'] = 0;
-  $memberCost[$memberId]['cost'] = 0;
-  $memberCost[$memberId]['name'] = $row['name'];
+    $memberId = $row['id'];
+    $members[$memberId] = $row;
+    $members[$memberId]['count'] = 0;
+    $memberCost[$memberId]['cost'] = 0;
+    $memberCost[$memberId]['name'] = $row['name'];
 }
 
 $activeSubscriptions = 0;
@@ -88,7 +88,7 @@ $totalSavingsPerMonth = 0;
 $totalCostsInReplacementsPerMonth = 0;
 
 $statsSubtitleParts = [];
-$query = "SELECT name, price, logo, frequency, cycle, currency_id, next_payment, payer_user_id, category_id, payment_method_id, inactive, replacement_subscription_id FROM subscriptions";
+$query = "SELECT name, price, share_percentage, logo, frequency, cycle, currency_id, next_payment, payer_user_id, category_id, payment_method_id, inactive, replacement_subscription_id FROM subscriptions";
 $conditions = [];
 $params = [];
 
@@ -136,7 +136,8 @@ if ($result) {
 
         foreach ($subscriptions as $subscription) {
             $name = $subscription['name'];
-            $price = $subscription['price'];
+            $sharePercentage = isset($subscription['share_percentage']) ? (int) $subscription['share_percentage'] : 100;
+            $price = floatval($subscription['price']) * ($sharePercentage / 100);
             $logo = $subscription['logo'];
             $frequency = $subscription['frequency'];
             $cycle = $subscription['cycle'];
@@ -193,13 +194,14 @@ if ($result) {
 
                 // Check if it has a replacement subscription and if it was not already counted
                 if ($replacementSubscriptionId && !in_array($replacementSubscriptionId, $replacementSubscriptions)) {
-                    $query = "SELECT price, currency_id, cycle, frequency FROM subscriptions WHERE id = :replacementSubscriptionId";
+                    $query = "SELECT price, share_percentage, currency_id, cycle, frequency FROM subscriptions WHERE id = :replacementSubscriptionId";
                     $stmt = $db->prepare($query);
                     $stmt->bindValue(':replacementSubscriptionId', $replacementSubscriptionId, SQLITE3_INTEGER);
                     $result = $stmt->execute();
                     $replacementSubscription = $result->fetchArray(SQLITE3_ASSOC);
                     if ($replacementSubscription) {
-                        $replacementSubscriptionPrice = getPriceConverted($replacementSubscription['price'], $replacementSubscription['currency_id'], $db, $userId);
+                        $sharePercentageReplacement = isset($replacementSubscription['share_percentage']) ? (int) $replacementSubscription['share_percentage'] : 100;
+                        $replacementSubscriptionPrice = getPriceConverted(floatval($replacementSubscription['price']) * ($sharePercentageReplacement / 100), $replacementSubscription['currency_id'], $db, $userId);
                         $replacementSubscriptionPrice = getPricePerMonth($replacementSubscription['cycle'], $replacementSubscription['frequency'], $replacementSubscriptionPrice);
                         $totalCostsInReplacementsPerMonth += $replacementSubscriptionPrice;
                     }

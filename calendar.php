@@ -66,6 +66,8 @@ $stmt->bindValue(':user_id', $userId, SQLITE3_INTEGER);
 $result = $stmt->execute();
 $subscriptions = [];
 while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+  $sharePercentage = isset($row['share_percentage']) ? (int) $row['share_percentage'] : 100;
+  $row['price'] = floatval($row['price']) * ($sharePercentage / 100);
   $subscriptions[] = $row;
   $currenciesInUse[] = $row['currency_id'];
 }
@@ -113,21 +115,22 @@ $yearsToLoad = $calendarYear - $currentYear + 1;
   ?>
   <div class="split-header">
     <h2>
-    <?= translate('calendar', $i18n) ?>
-      <button class="button export-ical" onClick="showExportPopup()" title="<?= translate('export_icalendar', $i18n) ?>">
+      <?= translate('calendar', $i18n) ?>
+      <button class="button export-ical" onClick="showExportPopup()"
+        title="<?= translate('export_icalendar', $i18n) ?>">
         <?php require_once 'images/siteicons/svg/export_ical.php'; ?>
       </button>
     </h2>
     <div id="subscriptions_calendar" class="subscription-modal">
-        <div class="modal-header">
-            <h3><?= translate('export_icalendar', $i18n) ?></h3>
-            <span class="fa-solid fa-xmark close-modal" onclick="closePopup()"></span>
-        </div>
-        <div class="form-group-inline">
-            <input id="iCalendarUrl" type="text" value="" readonly>
-            <input type="hidden" id="apiKey" value="<?= $userData['api_key'] ?>">
-            <button onclick="copyToClipboard()" class="button tiny"> <?= translate('copy_to_clipboard', $i18n) ?> </button>
-        </div>
+      <div class="modal-header">
+        <h3><?= translate('export_icalendar', $i18n) ?></h3>
+        <span class="fa-solid fa-xmark close-modal" onclick="closePopup()"></span>
+      </div>
+      <div class="form-group-inline">
+        <input id="iCalendarUrl" type="text" value="" readonly>
+        <input type="hidden" id="apiKey" value="<?= $userData['api_key'] ?>">
+        <button onclick="copyToClipboard()" class="button tiny"> <?= translate('copy_to_clipboard', $i18n) ?> </button>
+      </div>
     </div>
 
     <div class="calendar-nav">
@@ -345,17 +348,17 @@ $yearsToLoad = $calendarYear - $currentYear + 1;
     </div>
 
     <?php
-      if ($budget > 0 && $totalCostThisMonth > $budget) {
-        $overBudgetAmount = $totalCostThisMonth - $budget;
-        $overBudgetAmount = CurrencyFormatter::format($overBudgetAmount, $code);
-        ?>
-          <div class="over-budget">
-            <i class="fa-solid fa-exclamation-triangle"></i>
-            <?= translate('over_budget_warning', $i18n) ?>  (<?= $overBudgetAmount ?>)
-          </div>
-        <?php
-      }
-    ?>    
+    if ($budget > 0 && $totalCostThisMonth > $budget) {
+      $overBudgetAmount = $totalCostThisMonth - $budget;
+      $overBudgetAmount = CurrencyFormatter::format($overBudgetAmount, $code);
+      ?>
+      <div class="over-budget">
+        <i class="fa-solid fa-exclamation-triangle"></i>
+        <?= translate('over_budget_warning', $i18n) ?> (<?= $overBudgetAmount ?>)
+      </div>
+      <?php
+    }
+    ?>
 
     <div class="calendar-monthly-stats">
       <div class="calendar-monthly-stats-header">

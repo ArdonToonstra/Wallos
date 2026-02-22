@@ -17,6 +17,7 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
             $subscriptionData['name'] = htmlspecialchars_decode($row['name'] ?? "");
             $subscriptionData['logo'] = $row['logo'];
             $subscriptionData['price'] = $row['price'];
+            $subscriptionData['share_percentage'] = $row['share_percentage'] ?? 100;
             $subscriptionData['currency_id'] = $row['currency_id'];
             $subscriptionData['auto_renew'] = $row['auto_renew'];
             $subscriptionData['start_date'] = $row['start_date'];

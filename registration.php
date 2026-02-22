@@ -117,6 +117,8 @@ $categories = [
     ['id' => 15, 'name' => 'Technology'],
     ['id' => 16, 'name' => 'Cloud Services'],
     ['id' => 17, 'name' => 'Charity & Donations'],
+    ['id' => 18, 'name' => 'Investing'],
+    ['id' => 19, 'name' => 'Housing']
 ];
 
 $payment_methods = [
@@ -374,7 +376,8 @@ if (isset($_POST['username'])) {
                 </div>
                 <div class="form-group">
                     <label for="confirm_password"><?= translate('confirm_password', $i18n) ?>:</label>
-                    <input type="password" id="confirm_password" name="confirm_password" autocomplete="new-password" required>
+                    <input type="password" id="confirm_password" name="confirm_password" autocomplete="new-password"
+                        required>
                 </div>
                 <div class="form-group">
                     <label for="currency"><?= translate('main_currency', $i18n) ?>:</label>
@@ -459,7 +462,8 @@ if (isset($_POST['username'])) {
             } else {
                 ?>
                 <div class="separator">
-                    <input id="goToLoginButton" type="button" class="secondary-button" value="<?= translate('login', $i18n) ?>">
+                    <input id="goToLoginButton" type="button" class="secondary-button"
+                        value="<?= translate('login', $i18n) ?>">
                 </div>
                 <?php
             }

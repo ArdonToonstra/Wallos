@@ -22,6 +22,8 @@ function toggleNotificationDays() {
 function resetForm() {
   const id = document.querySelector("#id");
   id.value = "";
+  const sharePercentage = document.querySelector("#share_percentage");
+  if (sharePercentage) sharePercentage.value = 100;
   const formTitle = document.querySelector("#form-title");
   formTitle.textContent = translate('add_subscription');
   const logo = document.querySelector("#form-logo");
@@ -68,6 +70,8 @@ function fillEditFormFields(subscription) {
   name.value = subscription.name;
   const price = document.querySelector("#price");
   price.value = subscription.price;
+  const sharePercentage = document.querySelector("#share_percentage");
+  if (sharePercentage) sharePercentage.value = subscription.share_percentage ?? 100;
 
   const currencySelect = document.querySelector("#currency");
   currencySelect.value = subscription.currency_id.toString();
@@ -161,7 +165,7 @@ function openEditSubscription(event, id) {
 function addSubscription() {
   resetForm();
   const modal = document.getElementById('subscription-form');
-  
+
   const startDate = document.querySelector("#start_date");
   startDate.value = new Date().toISOString().split('T')[0];
 
@@ -746,8 +750,8 @@ document.querySelectorAll('.filter-item').forEach(function (item) {
     }
 
     if (activeFilters['categories'].length > 0 || activeFilters['members'].length > 0 ||
-       activeFilters['payments'].length > 0 || activeFilters['state'] !== "" || 
-       activeFilters['renewalType'] !== "") {
+      activeFilters['payments'].length > 0 || activeFilters['state'] !== "" ||
+      activeFilters['renewalType'] !== "") {
       document.querySelector('#clear-filters').classList.remove('hide');
     } else {
       document.querySelector('#clear-filters').classList.add('hide');
@@ -765,7 +769,7 @@ function clearFilters() {
   activeFilters['payments'] = [];
   activeFilters['state'] = "";
   activeFilters['renewalType'] = "";
-  
+
   document.querySelectorAll('.filter-item').forEach(function (item) {
     item.classList.remove('selected');
   });
@@ -836,17 +840,17 @@ function swipeHintAnimation() {
 function autoFillNextPaymentDate(e) {
   e.preventDefault();
   const frequencySelect = document.querySelector("#frequency");
-  const cycleSelect = document.querySelector("#cycle"); 
+  const cycleSelect = document.querySelector("#cycle");
   const startDate = document.querySelector("#start_date");
-  const nextPayment = document.querySelector("#next_payment"); 
+  const nextPayment = document.querySelector("#next_payment");
 
   // Do nothing if frequency, cycle, or start date is not set
   if (!frequencySelect.value || !cycleSelect.value || !startDate.value || isNaN(Date.parse(startDate.value))) {
     console.log(frequencySelect.value, cycleSelect.value, startDate.value);
     return;
   }
-  
-  const today = new Date();  
+
+  const today = new Date();
   const cycle = cycleSelect.value;
   const frequency = Number(frequencySelect.value);
 
@@ -856,28 +860,28 @@ function autoFillNextPaymentDate(e) {
 
   while (nextDate <= today && safetyCounter < maxIterations) {
     switch (cycle) {
-    case '1': // Days
-      nextDate.setDate(nextDate.getDate() + frequency);
-      break;
-    case '2': // Weeks
-      nextDate.setDate(nextDate.getDate() + 7 * frequency);
-      break;
-    case '3': // Months  
-      nextDate.setMonth(nextDate.getMonth() + frequency);
-      break;
-    case '4': // Years
-      nextDate.setFullYear(nextDate.getFullYear() + frequency);
-      break;
-    default:
+      case '1': // Days
+        nextDate.setDate(nextDate.getDate() + frequency);
+        break;
+      case '2': // Weeks
+        nextDate.setDate(nextDate.getDate() + 7 * frequency);
+        break;
+      case '3': // Months  
+        nextDate.setMonth(nextDate.getMonth() + frequency);
+        break;
+      case '4': // Years
+        nextDate.setFullYear(nextDate.getFullYear() + frequency);
+        break;
+      default:
     }
     safetyCounter++;
   }
 
-if (safetyCounter === maxIterations) {
-  return;
-}
+  if (safetyCounter === maxIterations) {
+    return;
+  }
 
-nextPayment.value = toISOStringWithTimezone(nextDate).substring(0, 10);
+  nextPayment.value = toISOStringWithTimezone(nextDate).substring(0, 10);
 }
 
 function toISOStringWithTimezone(date) {

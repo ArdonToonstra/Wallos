@@ -48,10 +48,25 @@ $stmt->execute();
 
 // Categories
 $categories = [
-    'No category', 'Entertainment', 'Music', 'Utilities', 'Food & Beverages',
-    'Health & Wellbeing', 'Productivity', 'Banking', 'Transport', 'Education',
-    'Insurance', 'Gaming', 'News & Magazines', 'Software', 'Technology',
-    'Cloud Services', 'Charity & Donations'
+    'No category',
+    'Entertainment',
+    'Music',
+    'Utilities',
+    'Food & Beverages',
+    'Health & Wellbeing',
+    'Productivity',
+    'Banking',
+    'Transport',
+    'Education',
+    'Insurance',
+    'Gaming',
+    'News & Magazines',
+    'Software',
+    'Technology',
+    'Cloud Services',
+    'Charity & Donations',
+    'Investing',
+    'Housing'
 ];
 
 $stmt = $db->prepare("INSERT INTO categories (name, \"order\", user_id) VALUES (:name, :order, :user_id)");
