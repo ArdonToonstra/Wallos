@@ -143,6 +143,15 @@ docker run -d --name wallos -v /path/to/config/wallos/db:/var/www/html/db \
 bellamy/wallos:latest
 ```
 
+#### Docker Remote Context (e.g., to a Raspberry Pi)
+
+If you have set up a Docker remote context (e.g., named `rpi` via SSH), you can deploy Wallos directly from your local source code to the remote machine using Docker Compose:
+
+```bash
+# Build the image from local source and deploy to the remote context
+docker --context rpi compose up -d --build
+```
+
 ### Docker Compose
 
 ```
