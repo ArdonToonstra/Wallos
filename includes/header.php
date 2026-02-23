@@ -176,9 +176,21 @@ $mobileNavigation = $settings['mobile_nav'] ? "mobile-navigation" : "";
             <a href="subscriptions.php" class="mobileNavigationHideOnMobile">
               <?php include "images/siteicons/svg/mobile-menu/subscriptions.php"; ?>
               <?= translate('subscriptions', $i18n) ?></a>  
+            <a href="income.php" class="mobileNavigationHideOnMobile">
+              <?php include "images/siteicons/svg/mobile-menu/income.php"; ?>
+              <?= translate('income', $i18n) ?></a>
+            <a href="expenses.php" class="mobileNavigationHideOnMobile">
+              <?php include "images/siteicons/svg/mobile-menu/expenses.php"; ?>
+              <?= translate('expenses', $i18n) ?></a>
+            <a href="savings.php" class="mobileNavigationHideOnMobile">
+              <?php include "images/siteicons/svg/mobile-menu/savings.php"; ?>
+              <?= translate('savings', $i18n) ?></a>
             <a href="calendar.php" class="mobileNavigationHideOnMobile">
                 <?php include "images/siteicons/svg/mobile-menu/calendar.php"; ?>
                 <?= translate('calendar', $i18n) ?></a>
+            <a href="networth.php" class="mobileNavigationHideOnMobile">
+              <?php include "images/siteicons/svg/mobile-menu/networth.php"; ?>
+              <?= translate('net_worth', $i18n) ?></a>
             <a href="stats.php" class="mobileNavigationHideOnMobile">
               <?php include "images/siteicons/svg/mobile-menu/statistics.php"; ?>
               <?= translate('stats', $i18n) ?></a>
@@ -218,7 +230,11 @@ $mobileNavigation = $settings['mobile_nav'] ? "mobile-navigation" : "";
   $page = basename($_SERVER['PHP_SELF']);
   $dashboardClass = $page === 'index.php' ? 'active' : '';
   $subscriptionsClass = $page === 'subscriptions.php' ? 'active' : '';
+  $incomeClass = $page === 'income.php' ? 'active' : '';
+  $expensesClass = $page === 'expenses.php' ? 'active' : '';
+  $savingsClass = $page === 'savings.php' ? 'active' : '';
   $calendarClass = $page === 'calendar.php' ? 'active' : '';
+  $networthClass = $page === 'networth.php' ? 'active' : '';
   $statsClass = $page === 'stats.php' ? 'active' : '';
   $settingsClass = $page === 'settings.php' ? 'active' : '';
   $profileClass = $page === 'profile.php' ? 'active' : '';
@@ -236,9 +252,25 @@ $mobileNavigation = $settings['mobile_nav'] ? "mobile-navigation" : "";
           <?php include "images/siteicons/svg/mobile-menu/subscriptions.php"; ?>
           <?= translate('subscriptions', $i18n) ?>
         </a>
+        <a href="income.php" class="nav-link <?= $incomeClass ?>" title="<?= translate('income', $i18n) ?>">
+          <?php include "images/siteicons/svg/mobile-menu/income.php"; ?>
+          <?= translate('income', $i18n) ?>
+        </a>
+        <a href="expenses.php" class="nav-link <?= $expensesClass ?>" title="<?= translate('expenses', $i18n) ?>">
+          <?php include "images/siteicons/svg/mobile-menu/expenses.php"; ?>
+          <?= translate('expenses', $i18n) ?>
+        </a>
+        <a href="savings.php" class="nav-link <?= $savingsClass ?>" title="<?= translate('savings', $i18n) ?>">
+          <?php include "images/siteicons/svg/mobile-menu/savings.php"; ?>
+          <?= translate('savings', $i18n) ?>
+        </a>
         <a href="calendar.php" class="nav-link <?= $calendarClass ?>" title="<?= translate('calendar', $i18n) ?>">
           <?php include "images/siteicons/svg/mobile-menu/calendar.php"; ?>
           <?= translate('calendar', $i18n) ?>
+        </a>
+        <a href="networth.php" class="nav-link <?= $networthClass ?>" title="<?= translate('net_worth', $i18n) ?>">
+          <?php include "images/siteicons/svg/mobile-menu/networth.php"; ?>
+          <?= translate('net_worth', $i18n) ?>
         </a>
         <a href="stats.php" class="nav-link <?= $statsClass ?>" title="<?= translate('stats', $i18n) ?>">
           <?php include "images/siteicons/svg/mobile-menu/statistics.php"; ?>

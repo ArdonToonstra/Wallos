@@ -46,4 +46,11 @@ let i18n = {
   payment_method: "Payment method",
   notes: "Notes",
   export: "Export",
+  // Finance modules
+  income: "Income",
+  expenses: "Expenses",
+  savings: "Savings & Investments",
+  net_worth: "Net Worth",
+  recurring: "Recurring",
+  one_off: "One-off",
 }

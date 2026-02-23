@@ -425,6 +425,72 @@ $i18n = [
     // TOTP Page
     "insert_totp_code" => "Insert TOTP code",
 
+    // Income Module
+    "income" => "Income",
+    "add_income" => "Add Income",
+    "edit_income" => "Edit Income",
+    "income_name" => "Income Name",
+    "income_source" => "Income Source",
+    "income_type" => "Type",
+    "recurring" => "Recurring",
+    "one_off" => "One-off",
+    "active_sources" => "Active Sources",
+    "monthly_income" => "Monthly Income",
+    "yearly_income" => "Yearly Income",
+    "one_off_income" => "One-off Income",
+    "no_income_message" => "No income sources added yet. Click the + button to add your first income source.",
+
+    // Expenses Module
+    "expenses" => "Expenses",
+    "add_expense" => "Add Expense",
+    "edit_expense" => "Edit Expense",
+    "expense_name" => "Expense Name",
+    "active_expenses" => "Active Expenses",
+    "monthly_expenses" => "Monthly Expenses",
+    "yearly_expenses" => "Yearly Expenses",
+    "one_off_expenses" => "One-off Expenses",
+    "no_expenses_message" => "No expenses added yet. Click the + button to add your first expense.",
+
+    // Savings Module
+    "savings" => "Savings & Investments",
+    "add_account" => "Add Account",
+    "edit_account" => "Edit Account",
+    "account_name" => "Account Name",
+    "account_type" => "Account Type",
+    "institution" => "Institution",
+    "record_balance" => "Record Balance",
+    "balance" => "Balance",
+    "balance_date" => "Date",
+    "active_accounts" => "Active Accounts",
+    "total_savings" => "Total Savings",
+    "total_investments" => "Total Investments",
+    "total_balance" => "Total Balance",
+    "balance_history" => "Balance History",
+    "no_accounts_message" => "No savings accounts added yet. Click the + button to add your first account.",
+    "type_savings" => "Savings",
+    "type_checking" => "Checking",
+    "type_investment" => "Investment",
+    "type_stocks" => "Stocks",
+    "type_crypto" => "Crypto",
+    "type_retirement" => "Retirement",
+    "type_other" => "Other",
+
+    // Net Worth Module
+    "net_worth" => "Net Worth",
+    "net_worth_projection" => "Net Worth Projection",
+    "monthly_outflow" => "Monthly Outflow",
+    "monthly_net" => "Monthly Net",
+    "current_net_worth" => "Current Net Worth",
+    "account_breakdown" => "Account Breakdown",
+    "income_vs_expenses" => "Income vs Expenses",
+    "historical_net_worth" => "Historical Net Worth",
+    "projection_settings" => "Projection Settings",
+    "expected_return_rate" => "Expected Return Rate (%)",
+    "inflation_rate" => "Inflation Rate (%)",
+    "salary_growth_rate" => "Salary Growth Rate (%)",
+    "projection_years" => "Projection Years",
+    "save_settings" => "Save Settings",
+
 
 ];
 
