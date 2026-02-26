@@ -7,6 +7,8 @@ $isEdit = isset($_POST['id']) && $_POST['id'] != "";
 $accountId = $_POST['account_id'];
 $balance = $_POST['balance'];
 $date = $_POST['date'];
+$shares = isset($_POST['shares']) && $_POST['shares'] !== '' ? $_POST['shares'] : null;
+$sharePrice = isset($_POST['share_price']) && $_POST['share_price'] !== '' ? $_POST['share_price'] : null;
 
 // Verify account belongs to user
 $checkQuery = "SELECT id FROM savings_accounts WHERE id = :accountId AND user_id = :userId";
@@ -21,14 +23,16 @@ if (!$checkResult->fetchArray(SQLITE3_ASSOC)) {
 }
 
 if (!$isEdit) {
-    $sql = "INSERT INTO savings_snapshots (account_id, user_id, balance, date) 
-            VALUES (:accountId, :userId, :balance, :date)";
+    $sql = "INSERT INTO savings_snapshots (account_id, user_id, balance, date, shares, share_price)
+            VALUES (:accountId, :userId, :balance, :date, :shares, :sharePrice)";
 } else {
     $id = $_POST['id'];
-    $sql = "UPDATE savings_snapshots SET 
+    $sql = "UPDATE savings_snapshots SET
                 account_id = :accountId,
                 balance = :balance,
-                date = :date
+                date = :date,
+                shares = :shares,
+                share_price = :sharePrice
             WHERE id = :id AND user_id = :userId";
 }
 
@@ -37,6 +41,16 @@ $stmt->bindParam(':accountId', $accountId, SQLITE3_INTEGER);
 $stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
 $stmt->bindParam(':balance', $balance, SQLITE3_FLOAT);
 $stmt->bindParam(':date', $date, SQLITE3_TEXT);
+if ($shares !== null) {
+    $stmt->bindParam(':shares', $shares, SQLITE3_FLOAT);
+} else {
+    $stmt->bindValue(':shares', null, SQLITE3_NULL);
+}
+if ($sharePrice !== null) {
+    $stmt->bindParam(':sharePrice', $sharePrice, SQLITE3_FLOAT);
+} else {
+    $stmt->bindValue(':sharePrice', null, SQLITE3_NULL);
+}
 
 if ($isEdit) {
     $stmt->bindParam(':id', $id, SQLITE3_INTEGER);

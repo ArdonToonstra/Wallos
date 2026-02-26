@@ -145,6 +145,8 @@ $accountTypes = [
     <div class="chart-container" style="margin-top: 1rem;">
         <canvas id="savingsChart" height="300"></canvas>
     </div>
+
+    <div id="snapshot-history-list" style="margin-top: 1.5rem;"></div>
     <?php } ?>
 </section>
 
@@ -217,16 +219,26 @@ $accountTypes = [
 
         <div class="form-group">
             <label for="snapshot-account">Account</label>
-            <select id="snapshot-account" name="account_id" required>
+            <select id="snapshot-account" name="account_id" required onchange="onSnapshotAccountChange()">
                 <?php foreach ($accounts as $account) { ?>
-                    <option value="<?= $account['id'] ?>"><?= htmlspecialchars($account['name']) ?></option>
+                    <option value="<?= $account['id'] ?>" data-type="<?= $account['type'] ?>"><?= htmlspecialchars($account['name']) ?></option>
                 <?php } ?>
             </select>
             <input type="hidden" id="snapshot-id" name="id">
         </div>
 
+        <div class="form-group" id="snapshot-shares-group" style="display: none;">
+            <label for="snapshot-shares">Number of Shares</label>
+            <input type="number" step="0.000001" id="snapshot-shares" name="shares" autocomplete="off" placeholder="e.g. 10.5" oninput="recalcSnapshotBalance()">
+        </div>
+
+        <div class="form-group" id="snapshot-share-price-group" style="display: none;">
+            <label for="snapshot-share-price">Price per Share</label>
+            <input type="number" step="0.0001" id="snapshot-share-price" name="share_price" autocomplete="off" placeholder="e.g. 150.00" oninput="recalcSnapshotBalance()">
+        </div>
+
         <div class="form-group">
-            <label for="snapshot-balance">Current Balance</label>
+            <label for="snapshot-balance" id="snapshot-balance-label">Current Balance</label>
             <input type="number" step="0.01" id="snapshot-balance" name="balance" autocomplete="off" placeholder="Balance" required>
         </div>
 
@@ -238,6 +250,7 @@ $accountTypes = [
         </div>
 
         <div class="buttons">
+            <input type="button" value="Delete" class="warning-button left thin" id="delete-snapshot" style="display: none">
             <input type="button" value="Cancel" class="secondary-button thin" onClick="closeSnapshotForm()">
             <input type="submit" value="Save" class="thin">
         </div>
