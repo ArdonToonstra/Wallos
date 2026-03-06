@@ -45,6 +45,7 @@ function editAccount(id) {
             document.querySelector("#account-currency").value = account.currency_id;
             document.querySelector("#account-institution").value = account.institution || "";
             document.querySelector("#account-notes").value = account.notes || "";
+            document.querySelector("#account-monthly-contribution").value = account.monthly_contribution || 0;
             document.querySelector("#account-inactive").checked = account.inactive == 1;
 
             const deleteButton = document.querySelector("#delete-account");

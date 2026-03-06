@@ -21,6 +21,77 @@ $nwSettings = $result->fetchArray(SQLITE3_ASSOC);
 $defaultReturn = $nwSettings ? $nwSettings['expected_return_rate'] : 7.0;
 $defaultInflation = $nwSettings ? $nwSettings['inflation_rate'] : 3.0;
 
+// Get total savings balance (current savings)
+$query = "SELECT sa.currency_id,
+          (SELECT ss.balance FROM savings_snapshots ss WHERE ss.account_id = sa.id ORDER BY ss.date DESC LIMIT 1) as latest_balance,
+          sa.monthly_contribution
+          FROM savings_accounts sa WHERE sa.user_id = :userId AND sa.inactive = 0";
+$stmt = $db->prepare($query);
+$stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
+$result = $stmt->execute();
+$totalSavingsBalance = 0;
+$totalMonthlyContributions = 0;
+while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+    $totalSavingsBalance += floatval($row['latest_balance'] ?? 0);
+    $totalMonthlyContributions += floatval($row['monthly_contribution'] ?? 0);
+}
+
+// Get monthly income
+$query = "SELECT SUM(
+            CASE WHEN type = 'recurring' THEN
+                CASE cycle
+                    WHEN 1 THEN amount * frequency * 30
+                    WHEN 2 THEN amount * frequency * 4.33
+                    WHEN 3 THEN amount * frequency
+                    WHEN 4 THEN amount * frequency / 12
+                    ELSE amount
+                END
+            ELSE 0 END
+          ) as monthly_income FROM income WHERE user_id = :userId AND inactive = 0";
+$stmt = $db->prepare($query);
+$stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+$result = $stmt->execute();
+$row = $result->fetchArray(SQLITE3_ASSOC);
+$monthlyIncome = floatval($row['monthly_income'] ?? 0);
+
+// Get monthly outflow (expenses + subscriptions)
+$query = "SELECT SUM(
+            CASE WHEN type = 'recurring' THEN
+                CASE cycle
+                    WHEN 1 THEN amount * frequency * 30
+                    WHEN 2 THEN amount * frequency * 4.33
+                    WHEN 3 THEN amount * frequency
+                    WHEN 4 THEN amount * frequency / 12
+                    ELSE amount
+                END
+            ELSE 0 END
+          ) as monthly FROM expenses WHERE user_id = :userId AND inactive = 0";
+$stmt = $db->prepare($query);
+$stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+$result = $stmt->execute();
+$row = $result->fetchArray(SQLITE3_ASSOC);
+$monthlyExpenses = floatval($row['monthly'] ?? 0);
+
+$query = "SELECT SUM(
+            CASE cycle
+                WHEN 1 THEN price * frequency * 30
+                WHEN 2 THEN price * frequency * 4.33
+                WHEN 3 THEN price * frequency
+                WHEN 4 THEN price * frequency / 12
+                ELSE price
+            END
+          ) as monthly FROM subscriptions WHERE user_id = :userId AND inactive = 0";
+$stmt = $db->prepare($query);
+$stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+$result = $stmt->execute();
+$row = $result->fetchArray(SQLITE3_ASSOC);
+$monthlySubscriptions = floatval($row['monthly'] ?? 0);
+
+$monthlyOutflow = $monthlyExpenses + $monthlySubscriptions;
+$annualIncome = round($monthlyIncome * 12);
+$annualExpenses = round($monthlyOutflow * 12);
+$annualContribution = round($totalMonthlyContributions * 12);
+
 $db->close();
 ?>
 
@@ -51,7 +122,8 @@ $db->close();
                     </div>
                     <div class="form-group">
                         <label for="fire-current-savings">Current Savings (<?= htmlspecialchars($currencySymbol) ?>)</label>
-                        <input type="number" id="fire-current-savings" value="100000" min="0" step="1000">
+                        <input type="number" id="fire-current-savings" value="<?= round($totalSavingsBalance) ?>" min="0" step="1000">
+                        <small>From your savings &amp; investment accounts</small>
                     </div>
                     <div class="form-group">
                         <label for="fire-annual-contribution">
@@ -60,12 +132,14 @@ $db->close();
                                 <i class="fa-solid fa-arrows-rotate"></i>
                             </span>
                         </label>
-                        <input type="number" id="fire-annual-contribution" value="24000" min="0" step="500">
+                        <input type="number" id="fire-annual-contribution" value="<?= $annualContribution ?>" min="0" step="500">
                         <small id="contribution-hint" class="fire-hint"></small>
+                        <small>From monthly contributions in Savings &amp; Investments</small>
                     </div>
                     <div class="form-group">
                         <label for="fire-annual-income">Annual Net Income (<?= htmlspecialchars($currencySymbol) ?>)</label>
-                        <input type="number" id="fire-annual-income" value="70000" min="0" step="1000">
+                        <input type="number" id="fire-annual-income" value="<?= $annualIncome ?>" min="0" step="1000">
+                        <small>From your recurring income</small>
                     </div>
                     <div class="form-group">
                         <label for="fire-annual-expenses">
@@ -74,8 +148,9 @@ $db->close();
                                 <i class="fa-solid fa-arrows-rotate"></i>
                             </span>
                         </label>
-                        <input type="number" id="fire-annual-expenses" value="48000" min="0" step="500">
+                        <input type="number" id="fire-annual-expenses" value="<?= $annualExpenses ?>" min="0" step="500">
                         <small id="expenses-hint" class="fire-hint"></small>
+                        <small>From your subscriptions + recurring expenses</small>
                     </div>
                     <div class="form-group">
                         <label for="fire-expected-return">Expected Return (%/year)</label>

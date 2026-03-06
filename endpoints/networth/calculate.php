@@ -94,6 +94,7 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
 // ========== GET CURRENT SAVINGS/INVESTMENT TOTALS ==========
 $totalSavings = 0;
 $totalInvestments = 0;
+$totalMonthlyContributions = 0;
 $accountBalances = [];
 
 $query = "SELECT sa.*, 
@@ -106,6 +107,9 @@ $result = $stmt->execute();
 while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
     $balance = floatval($row['latest_balance'] ?? 0);
     $convertedBalance = getPriceConverted($balance, $row['currency_id'], $db, $userId);
+    $monthlyContrib = floatval($row['monthly_contribution'] ?? 0);
+    $convertedContrib = getPriceConverted($monthlyContrib, $row['currency_id'], $db, $userId);
+    $totalMonthlyContributions += $convertedContrib;
     
     if (in_array($row['type'], ['investment', 'stocks', 'crypto', 'retirement'])) {
         $totalInvestments += $convertedBalance;
@@ -118,7 +122,8 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
         'type' => $row['type'],
         'balance' => $convertedBalance,
         'latest_balance' => $convertedBalance,
-        'institution' => $row['institution']
+        'institution' => $row['institution'],
+        'monthly_contribution' => $convertedContrib
     ];
 }
 
@@ -202,6 +207,7 @@ echo json_encode([
         "monthly_expenses" => round($totalMonthlyExpenses, 2),
         "monthly_subscriptions" => round($totalMonthlySubscriptions, 2),
         "monthly_outflow" => round($totalMonthlyExpenses + $totalMonthlySubscriptions, 2),
+        "monthly_contributions" => round($totalMonthlyContributions, 2),
         "monthly_net" => round($monthlyNetIncome, 2),
         "total_savings" => round($totalSavings, 2),
         "total_investments" => round($totalInvestments, 2),

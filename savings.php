@@ -25,12 +25,14 @@ if ($result) {
 // Calculate totals
 $totalSavings = 0;
 $totalInvestments = 0;
+$totalMonthlyContributions = 0;
 $activeCount = 0;
 
 foreach ($accounts as $account) {
     if ($account['inactive'] == 0) {
         $activeCount++;
         $balance = floatval($account['latest_balance'] ?? 0);
+        $totalMonthlyContributions += floatval($account['monthly_contribution'] ?? 0);
         if (in_array($account['type'], ['investment', 'stocks', 'crypto', 'retirement'])) {
             $totalInvestments += $balance;
         } else {
@@ -77,6 +79,12 @@ $accountTypes = [
             <span><?= CurrencyFormatter::format($totalSavings + $totalInvestments, $code) ?></span>
             <div class="title">Total Balance</div>
         </div>
+        <?php if ($totalMonthlyContributions > 0): ?>
+        <div class="statistic">
+            <span><?= CurrencyFormatter::format($totalMonthlyContributions, $code) ?></span>
+            <div class="title">Monthly Contributions</div>
+        </div>
+        <?php endif; ?>
     </div>
 
     <header class="main-actions" id="main-actions">
@@ -120,6 +128,9 @@ $accountTypes = [
                             <div class="subscription-cycle">
                                 <?= $accountTypes[$account['type']] ?? $account['type'] ?>
                                 <?= $account['institution'] ? ' · ' . htmlspecialchars($account['institution']) : '' ?>
+                                <?php if (floatval($account['monthly_contribution'] ?? 0) > 0): ?>
+                                    · <?= CurrencyFormatter::format($account['monthly_contribution'], $account['currency_code'] ?? $code) ?>/mo
+                                <?php endif; ?>
                                 <?= $account['latest_date'] ? ' · Updated: ' . $account['latest_date'] : '' ?>
                             </div>
                         </div>
@@ -192,6 +203,12 @@ $accountTypes = [
         <div class="form-group">
             <label for="account-notes">Notes</label>
             <input type="text" id="account-notes" name="notes" autocomplete="off" placeholder="Notes">
+        </div>
+
+        <div class="form-group">
+            <label for="account-monthly-contribution">Monthly Contribution (<?= $currencies[$main_currency]['symbol'] ?? '$' ?>)</label>
+            <input type="number" step="0.01" min="0" id="account-monthly-contribution" name="monthly_contribution" autocomplete="off" placeholder="0.00" value="0">
+            <small>Fixed monthly payment or transfer to this account</small>
         </div>
 
         <div class="form-group">

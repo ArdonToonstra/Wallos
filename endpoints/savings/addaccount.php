@@ -10,13 +10,14 @@ $type = $_POST["type"] ?? "savings";
 $currencyId = $_POST["currency_id"];
 $institution = validate($_POST["institution"] ?? "");
 $notes = validate($_POST["notes"] ?? "");
+$monthlyContribution = floatval($_POST["monthly_contribution"] ?? 0);
 $inactive = isset($_POST['inactive']) ? 1 : 0;
 
 if (!$isEdit) {
     $sql = "INSERT INTO savings_accounts (
-                name, type, currency_id, institution, notes, inactive, user_id
+                name, type, currency_id, institution, notes, monthly_contribution, inactive, user_id
             ) VALUES (
-                :name, :type, :currencyId, :institution, :notes, :inactive, :userId
+                :name, :type, :currencyId, :institution, :notes, :monthlyContribution, :inactive, :userId
             )";
 } else {
     $id = $_POST['id'];
@@ -26,6 +27,7 @@ if (!$isEdit) {
                 currency_id = :currencyId,
                 institution = :institution,
                 notes = :notes, 
+                monthly_contribution = :monthlyContribution,
                 inactive = :inactive
             WHERE id = :id AND user_id = :userId";
 }
@@ -36,6 +38,7 @@ $stmt->bindParam(':type', $type, SQLITE3_TEXT);
 $stmt->bindParam(':currencyId', $currencyId, SQLITE3_INTEGER);
 $stmt->bindParam(':institution', $institution, SQLITE3_TEXT);
 $stmt->bindParam(':notes', $notes, SQLITE3_TEXT);
+$stmt->bindParam(':monthlyContribution', $monthlyContribution);
 $stmt->bindParam(':inactive', $inactive, SQLITE3_INTEGER);
 $stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
 
