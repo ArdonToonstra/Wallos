@@ -82,7 +82,7 @@ $mobileNavigation = $settings['mobile_nav'] ? "mobile-navigation" : "";
 <html dir="<?= $languages[$lang]['dir'] ?>">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wallos - Subscription Tracker</title>
   <meta name="apple-mobile-web-app-title" content="Wallos">
   <meta name="theme-color" content="<?= $theme == "light" ? "#FFFFFF" : "#222222" ?>" id="theme-color" />
@@ -191,6 +191,9 @@ $mobileNavigation = $settings['mobile_nav'] ? "mobile-navigation" : "";
             <a href="networth.php" class="mobileNavigationHideOnMobile">
               <?php include "images/siteicons/svg/mobile-menu/networth.php"; ?>
               <?= translate('net_worth', $i18n) ?></a>
+            <a href="fire.php" class="mobileNavigationHideOnMobile">
+              <?php include "images/siteicons/svg/mobile-menu/fire.php"; ?>
+              FIRE Calculator</a>
             <a href="stats.php" class="mobileNavigationHideOnMobile">
               <?php include "images/siteicons/svg/mobile-menu/statistics.php"; ?>
               <?= translate('stats', $i18n) ?></a>
@@ -235,6 +238,7 @@ $mobileNavigation = $settings['mobile_nav'] ? "mobile-navigation" : "";
   $savingsClass = $page === 'savings.php' ? 'active' : '';
   $calendarClass = $page === 'calendar.php' ? 'active' : '';
   $networthClass = $page === 'networth.php' ? 'active' : '';
+  $fireClass = $page === 'fire.php' ? 'active' : '';
   $statsClass = $page === 'stats.php' ? 'active' : '';
   $settingsClass = $page === 'settings.php' ? 'active' : '';
   $profileClass = $page === 'profile.php' ? 'active' : '';
@@ -271,6 +275,10 @@ $mobileNavigation = $settings['mobile_nav'] ? "mobile-navigation" : "";
         <a href="networth.php" class="nav-link <?= $networthClass ?>" title="<?= translate('net_worth', $i18n) ?>">
           <?php include "images/siteicons/svg/mobile-menu/networth.php"; ?>
           <?= translate('net_worth', $i18n) ?>
+        </a>
+        <a href="fire.php" class="nav-link <?= $fireClass ?>" title="FIRE Calculator">
+          <?php include "images/siteicons/svg/mobile-menu/fire.php"; ?>
+          FIRE
         </a>
         <a href="stats.php" class="nav-link <?= $statsClass ?>" title="<?= translate('stats', $i18n) ?>">
           <?php include "images/siteicons/svg/mobile-menu/statistics.php"; ?>

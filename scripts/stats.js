@@ -17,6 +17,8 @@ function loadGraph(container, dataPoints, currency, run) {
                 }),
             },
             options: {
+                responsive: true,
+                maintainAspectRatio: false,
                 animation: {
                     animateRotate: true,
                     animateScale: true,
@@ -61,6 +63,8 @@ function loadLineGraph(container, dataPoints, currency, run) {
                 }),
             },
             options: {
+                responsive: true,
+                maintainAspectRatio: false,
                 animation: {
                     animateRotate: true,
                     animateScale: true,

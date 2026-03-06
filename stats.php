@@ -285,7 +285,7 @@ require_once 'includes/stats_calculations.php';
             <?= translate('total_cost_trend', $i18n) ?>
             <div class="sub-header">(<?= translate('monthly_cost', $i18n) ?>)</div>
           </header>
-          <canvas id="totalMonthlyCostChart" style="height: 370px; width: 100%; max-height: 370px;"></canvas>
+          <canvas id="totalMonthlyCostChart"></canvas>
         </section>
         <?php
       }
@@ -309,7 +309,7 @@ require_once 'includes/stats_calculations.php';
             <?= translate('category_split', $i18n) ?>
             <div class="sub-header">(<?= translate('monthly_cost', $i18n) ?>)</div>
           </header>
-          <canvas id="categorySplitChart" style="height: 370px; width: 100%;"></canvas>
+          <canvas id="categorySplitChart"></canvas>
         </section>
         <?php
       }
@@ -320,7 +320,7 @@ require_once 'includes/stats_calculations.php';
           <header>
             <?= translate('payment_method_split', $i18n) ?>
           </header>
-          <canvas id="paymentMethidSplitChart" style="height: 370px; width: 100%;"></canvas>
+          <canvas id="paymentMethidSplitChart"></canvas>
         </section>
         <?php
       }
@@ -331,7 +331,7 @@ require_once 'includes/stats_calculations.php';
           <header>
             <?= translate('cost_vs_budget', $i18n) ?> (<?= CurrencyFormatter::format($budget, $code) ?>)
           </header>
-          <canvas id="budgetVsCostChart" style="height: 370px; width: 100%;"></canvas>
+          <canvas id="budgetVsCostChart"></canvas>
         </section>
         <?php
       }

@@ -1,0 +1,180 @@
+/* FIRE Calculator Styles */
+
+.fire-subtitle {
+    color: var(--text-color-secondary, #666);
+    margin-top: -10px;
+    margin-bottom: 20px;
+}
+
+.fire-layout {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 24px;
+    align-items: start;
+}
+
+@media (max-width: 960px) {
+    .fire-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.fire-card {
+    background-color: var(--box-background-color);
+    border: 1px solid var(--box-border-color);
+    border-radius: 16px;
+    box-shadow: var(--box-shadow);
+    padding: 20px 24px;
+    margin-bottom: 20px;
+}
+
+.fire-card h3 {
+    margin: 0 0 16px 0;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fire-card h3 i {
+    color: var(--main-color);
+}
+
+.fire-form .form-group {
+    margin-bottom: 14px;
+}
+
+.fire-form .form-group label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+
+.fire-form .form-group input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.fire-form .form-group small {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--text-color-secondary, #888);
+}
+
+.fire-hint {
+    color: var(--accent-color, #f59e0b) !important;
+    font-style: italic;
+}
+
+.fire-toggle-monthly {
+    cursor: pointer;
+    color: var(--main-color);
+    font-size: 12px;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.fire-toggle-monthly:hover {
+    opacity: 1;
+}
+
+/* Statistics override for 4 columns on FIRE page */
+#fire-stats {
+    margin-bottom: 20px;
+}
+
+#fire-stats .statistic {
+    flex-basis: calc(25% - 15px);
+}
+
+#fire-stats .statistic > span {
+    font-size: 28px;
+    word-break: break-word;
+    text-align: center;
+}
+
+#fire-stats .statistic > .subtitle {
+    font-size: 13px;
+    color: var(--text-color-secondary, #888);
+    margin-top: 4px;
+}
+
+@media (max-width: 1200px) {
+    #fire-stats .statistic {
+        flex-basis: calc(50% - 10px);
+    }
+}
+
+@media (max-width: 768px) {
+    #fire-stats .statistic {
+        flex-basis: 100%;
+    }
+
+    #fire-stats .statistic > span {
+        font-size: 24px;
+    }
+}
+
+/* Progress Bar */
+.fire-progress-container {
+    margin: 10px 0;
+}
+
+.fire-progress-bar-wrapper {
+    background-color: var(--box-border-color, #e5e7eb);
+    border-radius: 10px;
+    height: 32px;
+    overflow: hidden;
+    position: relative;
+}
+
+.fire-progress-bar {
+    height: 100%;
+    border-radius: 10px;
+    transition: width 0.5s ease, background-color 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+}
+
+.fire-progress-bar span {
+    color: #fff;
+    font-weight: 600;
+    font-size: 14px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.fire-progress-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--text-color-secondary, #888);
+}
+
+/* Explanation card */
+.fire-explanation-content p {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.fire-explanation-content .fire-note {
+    color: var(--text-color-secondary, #888);
+    font-size: 13px;
+}
+
+/* Chart container */
+.fire-card .chart-container {
+    position: relative;
+    height: 350px;
+}
+
+.fire-card .chart-container canvas {
+    width: 100% !important;
+}
