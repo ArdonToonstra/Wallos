@@ -279,10 +279,16 @@ if (
         }
     }
 
+    $birthdate = isset($_POST['birthdate']) ? validate($_POST['birthdate']) : '';
+    // Basic date format validation
+    if (!empty($birthdate) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $birthdate)) {
+        $birthdate = '';
+    }
+
     if (isset($_POST['password']) && $_POST['password'] != "" && !$demoMode) {
-        $sql = "UPDATE user SET avatar = :avatar, firstname = :firstname, lastname = :lastname, email = :email, password = :password, main_currency = :main_currency, language = :language WHERE id = :userId";
+        $sql = "UPDATE user SET avatar = :avatar, firstname = :firstname, lastname = :lastname, email = :email, password = :password, main_currency = :main_currency, language = :language, birthdate = :birthdate WHERE id = :userId";
     } else {
-        $sql = "UPDATE user SET avatar = :avatar, firstname = :firstname, lastname = :lastname, email = :email, main_currency = :main_currency, language = :language WHERE id = :userId";
+        $sql = "UPDATE user SET avatar = :avatar, firstname = :firstname, lastname = :lastname, email = :email, main_currency = :main_currency, language = :language, birthdate = :birthdate WHERE id = :userId";
     }
 
     $stmt = $db->prepare($sql);
@@ -292,6 +298,7 @@ if (
     $stmt->bindParam(':email', $email, SQLITE3_TEXT);
     $stmt->bindParam(':main_currency', $main_currency, SQLITE3_INTEGER);
     $stmt->bindParam(':language', $language, SQLITE3_TEXT);
+    $stmt->bindParam(':birthdate', $birthdate, SQLITE3_TEXT);
     $stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
 
     if (isset($_POST['password']) && $_POST['password'] != "" && !$demoMode) {

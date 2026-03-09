@@ -1,5 +1,7 @@
 // FIRE Calculator JS
 
+var contributionSource = "savings"; // "savings" or "net"
+
 document.addEventListener("DOMContentLoaded", function () {
     // Bind all inputs to recalculate
     const inputs = document.querySelectorAll(".fire-form input");
@@ -74,6 +76,38 @@ function getAnnualValue(inputId, toggleId) {
         return val * 12;
     }
     return val;
+}
+
+function setContributionSource(source) {
+    contributionSource = source;
+
+    // Update button states
+    document.getElementById("contribution-source-savings").classList.toggle("active", source === "savings");
+    document.getElementById("contribution-source-net").classList.toggle("active", source === "net");
+
+    // Get the annual value for the selected source
+    var annualValue = source === "savings"
+        ? (window.fireSavingsContribution || 0)
+        : (window.fireNetContribution || 0);
+
+    // Update the input (respecting monthly/annual toggle state)
+    var toggle = document.getElementById("contribution-toggle");
+    var input = document.getElementById("fire-annual-contribution");
+    if (toggle && toggle.dataset.mode === "monthly") {
+        input.value = Math.round(annualValue / 12);
+    } else {
+        input.value = Math.round(annualValue);
+    }
+
+    // Update hint text
+    var sourceHint = document.getElementById("contribution-source-hint");
+    if (sourceHint) {
+        sourceHint.textContent = source === "savings"
+            ? "From monthly contributions in Savings & Investments"
+            : "What remains after net income minus expenses";
+    }
+
+    calculate();
 }
 
 // ============================================

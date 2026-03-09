@@ -2,6 +2,33 @@
 
 require_once 'includes/header.php';
 
+// ============================================
+// Helper functions
+// ============================================
+
+function getPricePerMonthFire($cycle, $frequency, $price) {
+    $frequency = floatval($frequency);
+    if ($frequency <= 0) return 0;
+    switch (intval($cycle)) {
+        case 1: return $price * (30 / $frequency);    // daily
+        case 2: return $price * (4.35 / $frequency);  // weekly
+        case 3: return $price / $frequency;             // monthly
+        case 4: return $price / (12 * $frequency);     // yearly
+        default: return $price;
+    }
+}
+
+function getPriceConvertedFire($price, $currencyId, $db, $userId) {
+    $query = "SELECT rate FROM currencies WHERE id = :currency AND user_id = :userId";
+    $stmt = $db->prepare($query);
+    $stmt->bindValue(':currency', $currencyId, SQLITE3_INTEGER);
+    $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+    $result = $stmt->execute();
+    $row = $result->fetchArray(SQLITE3_ASSOC);
+    if ($row === false || floatval($row['rate']) == 0) return $price;
+    return $price / floatval($row['rate']);
+}
+
 // Get main currency symbol
 $query = "SELECT c.symbol, c.code FROM currencies c INNER JOIN user u ON c.id = u.main_currency WHERE u.id = :userId";
 $stmt = $db->prepare($query);
@@ -21,7 +48,30 @@ $nwSettings = $result->fetchArray(SQLITE3_ASSOC);
 $defaultReturn = $nwSettings ? $nwSettings['expected_return_rate'] : 7.0;
 $defaultInflation = $nwSettings ? $nwSettings['inflation_rate'] : 3.0;
 
-// Get total savings balance (current savings)
+// Get birthdate and calculate current age
+$query = "SELECT birthdate FROM user WHERE id = :userId";
+$stmt = $db->prepare($query);
+$stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+$result = $stmt->execute();
+$userRow = $result->fetchArray(SQLITE3_ASSOC);
+$birthdate = $userRow['birthdate'] ?? '';
+$calculatedAge = 30;
+$hasBirthdate = false;
+if (!empty($birthdate)) {
+    try {
+        $birthDt = new DateTime($birthdate);
+        $now = new DateTime();
+        $age = $now->diff($birthDt)->y;
+        if ($age >= 10 && $age <= 100) {
+            $calculatedAge = $age;
+            $hasBirthdate = true;
+        }
+    } catch (Exception $e) {
+        // Invalid date, use default
+    }
+}
+
+// Get total savings balance and monthly contributions
 $query = "SELECT sa.currency_id,
           (SELECT ss.balance FROM savings_snapshots ss WHERE ss.account_id = sa.id ORDER BY ss.date DESC LIMIT 1) as latest_balance,
           sa.monthly_contribution
@@ -32,65 +82,59 @@ $result = $stmt->execute();
 $totalSavingsBalance = 0;
 $totalMonthlyContributions = 0;
 while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-    $totalSavingsBalance += floatval($row['latest_balance'] ?? 0);
-    $totalMonthlyContributions += floatval($row['monthly_contribution'] ?? 0);
+    $balance = floatval($row['latest_balance'] ?? 0);
+    $convertedBalance = getPriceConvertedFire($balance, $row['currency_id'], $db, $userId);
+    $totalSavingsBalance += $convertedBalance;
+
+    $contrib = floatval($row['monthly_contribution'] ?? 0);
+    $convertedContrib = getPriceConvertedFire($contrib, $row['currency_id'], $db, $userId);
+    $totalMonthlyContributions += $convertedContrib;
 }
 
-// Get monthly income
-$query = "SELECT SUM(
-            CASE WHEN type = 'recurring' THEN
-                CASE cycle
-                    WHEN 1 THEN amount * frequency * 30
-                    WHEN 2 THEN amount * frequency * 4.33
-                    WHEN 3 THEN amount * frequency
-                    WHEN 4 THEN amount * frequency / 12
-                    ELSE amount
-                END
-            ELSE 0 END
-          ) as monthly_income FROM income WHERE user_id = :userId AND inactive = 0";
+// Get monthly income (recurring only, with currency conversion)
+$monthlyIncome = 0;
+$query = "SELECT amount, cycle, frequency, currency_id, type FROM income WHERE user_id = :userId AND inactive = 0";
 $stmt = $db->prepare($query);
 $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
 $result = $stmt->execute();
-$row = $result->fetchArray(SQLITE3_ASSOC);
-$monthlyIncome = floatval($row['monthly_income'] ?? 0);
+while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+    if ($row['type'] === 'recurring') {
+        $converted = getPriceConvertedFire(floatval($row['amount']), $row['currency_id'], $db, $userId);
+        $monthlyIncome += getPricePerMonthFire($row['cycle'], $row['frequency'], $converted);
+    }
+}
 
-// Get monthly outflow (expenses + subscriptions)
-$query = "SELECT SUM(
-            CASE WHEN type = 'recurring' THEN
-                CASE cycle
-                    WHEN 1 THEN amount * frequency * 30
-                    WHEN 2 THEN amount * frequency * 4.33
-                    WHEN 3 THEN amount * frequency
-                    WHEN 4 THEN amount * frequency / 12
-                    ELSE amount
-                END
-            ELSE 0 END
-          ) as monthly FROM expenses WHERE user_id = :userId AND inactive = 0";
+// Get monthly expenses (recurring only, with currency conversion)
+$monthlyExpenses = 0;
+$query = "SELECT amount, cycle, frequency, currency_id, type FROM expenses WHERE user_id = :userId AND inactive = 0";
 $stmt = $db->prepare($query);
 $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
 $result = $stmt->execute();
-$row = $result->fetchArray(SQLITE3_ASSOC);
-$monthlyExpenses = floatval($row['monthly'] ?? 0);
+while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+    if ($row['type'] === 'recurring') {
+        $converted = getPriceConvertedFire(floatval($row['amount']), $row['currency_id'], $db, $userId);
+        $monthlyExpenses += getPricePerMonthFire($row['cycle'], $row['frequency'], $converted);
+    }
+}
 
-$query = "SELECT SUM(
-            CASE cycle
-                WHEN 1 THEN price * frequency * 30
-                WHEN 2 THEN price * frequency * 4.33
-                WHEN 3 THEN price * frequency
-                WHEN 4 THEN price * frequency / 12
-                ELSE price
-            END
-          ) as monthly FROM subscriptions WHERE user_id = :userId AND inactive = 0";
+// Get monthly subscriptions (with share_percentage and currency conversion)
+$monthlySubscriptions = 0;
+$query = "SELECT price, cycle, frequency, currency_id, share_percentage FROM subscriptions WHERE user_id = :userId AND inactive = 0";
 $stmt = $db->prepare($query);
 $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
 $result = $stmt->execute();
-$row = $result->fetchArray(SQLITE3_ASSOC);
-$monthlySubscriptions = floatval($row['monthly'] ?? 0);
+while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+    $sharePercentage = isset($row['share_percentage']) ? intval($row['share_percentage']) : 100;
+    $price = floatval($row['price']) * ($sharePercentage / 100);
+    $converted = getPriceConvertedFire($price, $row['currency_id'], $db, $userId);
+    $monthlySubscriptions += getPricePerMonthFire($row['cycle'], $row['frequency'], $converted);
+}
 
 $monthlyOutflow = $monthlyExpenses + $monthlySubscriptions;
 $annualIncome = round($monthlyIncome * 12);
 $annualExpenses = round($monthlyOutflow * 12);
 $annualContribution = round($totalMonthlyContributions * 12);
+$annualNetContribution = round(($monthlyIncome - $monthlyOutflow) * 12);
 
 $db->close();
 ?>
@@ -114,7 +158,12 @@ $db->close();
                 <div class="fire-form">
                     <div class="form-group">
                         <label for="fire-current-age">Current Age</label>
-                        <input type="number" id="fire-current-age" value="30" min="18" max="80" step="1">
+                        <input type="number" id="fire-current-age" value="<?= $calculatedAge ?>" min="18" max="80" step="1">
+                        <?php if ($hasBirthdate): ?>
+                        <small>Calculated from your birthdate &mdash; <a href="profile.php">update in Profile</a></small>
+                        <?php else: ?>
+                        <small>Set your <a href="profile.php">birthdate in Profile</a> to auto-calculate</small>
+                        <?php endif; ?>
                     </div>
                     <div class="form-group">
                         <label for="fire-retirement-age">Target Retirement Age</label>
@@ -132,9 +181,13 @@ $db->close();
                                 <i class="fa-solid fa-arrows-rotate"></i>
                             </span>
                         </label>
+                        <div class="fire-source-toggle">
+                            <button type="button" class="fire-source-btn active" id="contribution-source-savings" onclick="setContributionSource('savings')">Savings</button>
+                            <button type="button" class="fire-source-btn" id="contribution-source-net" onclick="setContributionSource('net')">Net Income</button>
+                        </div>
                         <input type="number" id="fire-annual-contribution" value="<?= $annualContribution ?>" min="0" step="500">
                         <small id="contribution-hint" class="fire-hint"></small>
-                        <small>From monthly contributions in Savings &amp; Investments</small>
+                        <small id="contribution-source-hint">From monthly contributions in Savings &amp; Investments</small>
                     </div>
                     <div class="form-group">
                         <label for="fire-annual-income">Annual Net Income (<?= htmlspecialchars($currencySymbol) ?>)</label>
@@ -165,7 +218,7 @@ $db->close();
                     <div class="form-group">
                         <label for="fire-withdrawal-rate">Safe Withdrawal Rate (%)</label>
                         <input type="number" id="fire-withdrawal-rate" value="4.0" min="2" max="6" step="0.1">
-                        <small>The 4% rule — withdraw 4% of portfolio yearly (Trinity Study)</small>
+                        <small>The 4% rule &mdash; withdraw 4% of portfolio yearly (Trinity Study)</small>
                     </div>
                 </div>
             </div>
@@ -227,7 +280,7 @@ $db->close();
                     <p id="fire-explain-number"></p>
                     <p id="fire-explain-years"></p>
                     <p class="fire-note">
-                        The chart shows your portfolio growth over time. The dashed line represents 
+                        The chart shows your portfolio growth over time. The dashed line represents
                         inflation-adjusted values (purchasing power). The red line is your FIRE target.
                     </p>
                 </div>
@@ -240,6 +293,8 @@ $db->close();
 <script>
     window.currencyCode = "<?= htmlspecialchars($currencyCode) ?>";
     window.currencySymbol = "<?= htmlspecialchars($currencySymbol) ?>";
+    window.fireSavingsContribution = <?= $annualContribution ?>;
+    window.fireNetContribution = <?= $annualNetContribution ?>;
 </script>
 <script src="scripts/fire.js?<?= $version ?>"></script>
 <?php require_once 'includes/footer.php'; ?>

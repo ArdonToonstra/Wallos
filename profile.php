@@ -74,6 +74,12 @@ require_once 'includes/header.php';
                                 value="<?= $userData['lastname'] ?>">
                         </div>
                         <div class="form-group">
+                            <label for="birthdate">Birthdate:</label>
+                            <input type="date" id="birthdate" name="birthdate"
+                                value="<?= htmlspecialchars($userData['birthdate'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                            <small>Used to auto-calculate your age in the FIRE calculator</small>
+                        </div>
+                        <div class="form-group">
                             <label for="email"><?= translate('email', $i18n) ?>:</label>
                             <input type="email" id="email" name="email" autocomplete="email"
                                 value="<?= $userData['email'] ?>" required>

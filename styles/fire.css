@@ -169,6 +169,30 @@
     font-size: 13px;
 }
 
+/* Contribution source toggle */
+.fire-source-toggle {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.fire-source-btn {
+    padding: 3px 10px;
+    font-size: 12px;
+    border: 1px solid var(--box-border-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-color-secondary, #888);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.fire-source-btn.active {
+    background: var(--main-color);
+    color: #fff;
+    border-color: var(--main-color);
+}
+
 /* Chart container */
 .fire-card .chart-container {
     position: relative;
