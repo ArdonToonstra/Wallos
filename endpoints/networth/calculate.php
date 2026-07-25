@@ -1,5 +1,6 @@
 <?php
 require_once '../../includes/connect_endpoint.php';
+require_once '../../includes/savings_types.php';
 
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
     echo json_encode(["success" => false, "message" => "Not authenticated"]);
@@ -111,7 +112,7 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
     $convertedContrib = getPriceConverted($monthlyContrib, $row['currency_id'], $db, $userId);
     $totalMonthlyContributions += $convertedContrib;
     
-    if (in_array($row['type'], ['investment', 'stocks', 'crypto', 'retirement'])) {
+    if (isInvestmentType($row['type'])) {
         $totalInvestments += $convertedBalance;
     } else {
         $totalSavings += $convertedBalance;

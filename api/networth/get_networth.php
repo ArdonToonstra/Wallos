@@ -8,6 +8,7 @@ Returns a JSON object with net worth calculations, projections and account balan
 */
 
 require_once '../../includes/connect_endpoint.php';
+require_once '../../includes/savings_types.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 
@@ -121,7 +122,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" || $_SERVER["REQUEST_METHOD"] === "GET
     while ($account = $result->fetchArray(SQLITE3_ASSOC)) {
         $balance = $account['latest_balance'] ?? 0;
         $accountBalances[] = $account;
-        if (in_array($account['type'], ['investment', 'stocks', 'crypto', 'retirement'])) {
+        if (isInvestmentType($account['type'])) {
             $investmentTotal += $balance;
         } else {
             $savingsTotal += $balance;

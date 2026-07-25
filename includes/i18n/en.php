@@ -513,8 +513,9 @@ $i18n = [
     "one_off_expenses" => "One-off Expenses",
     "no_expenses_message" => "No expenses added yet. Click the + button to add your first expense.",
 
-    // Savings Module
-    "savings" => "Savings & Investments",
+    // Savings & Investments Modules
+    "savings" => "Savings",
+    "investments" => "Investments",
     "add_account" => "Add Account",
     "edit_account" => "Edit Account",
     "account_name" => "Account Name",

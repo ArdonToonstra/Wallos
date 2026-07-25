@@ -194,6 +194,9 @@ $mobileNavigation = $settings['mobile_nav'] ? "mobile-navigation" : "";
             <a href="savings.php" class="mobileNavigationHideOnMobile">
               <?php include "images/siteicons/svg/mobile-menu/savings.php"; ?>
               <?= translate('savings', $i18n) ?></a>
+            <a href="investments.php" class="mobileNavigationHideOnMobile">
+              <?php include "images/siteicons/svg/mobile-menu/investments.php"; ?>
+              <?= translate('investments', $i18n) ?></a>
             <a href="calendar.php" class="mobileNavigationHideOnMobile">
                 <?php include "images/siteicons/svg/mobile-menu/calendar.php"; ?>
                 <?= translate('calendar', $i18n) ?></a>
@@ -245,6 +248,7 @@ $mobileNavigation = $settings['mobile_nav'] ? "mobile-navigation" : "";
   $incomeClass = $page === 'income.php' ? 'active' : '';
   $expensesClass = $page === 'expenses.php' ? 'active' : '';
   $savingsClass = $page === 'savings.php' ? 'active' : '';
+  $investmentsClass = $page === 'investments.php' ? 'active' : '';
   $calendarClass = $page === 'calendar.php' ? 'active' : '';
   $networthClass = $page === 'networth.php' ? 'active' : '';
   $fireClass = $page === 'fire.php' ? 'active' : '';
@@ -276,6 +280,10 @@ $mobileNavigation = $settings['mobile_nav'] ? "mobile-navigation" : "";
         <a href="savings.php" class="nav-link <?= $savingsClass ?>" title="<?= translate('savings', $i18n) ?>">
           <?php include "images/siteicons/svg/mobile-menu/savings.php"; ?>
           <?= translate('savings', $i18n) ?>
+        </a>
+        <a href="investments.php" class="nav-link <?= $investmentsClass ?>" title="<?= translate('investments', $i18n) ?>">
+          <?php include "images/siteicons/svg/mobile-menu/investments.php"; ?>
+          <?= translate('investments', $i18n) ?>
         </a>
         <a href="calendar.php" class="nav-link <?= $calendarClass ?>" title="<?= translate('calendar', $i18n) ?>">
           <?php include "images/siteicons/svg/mobile-menu/calendar.php"; ?>

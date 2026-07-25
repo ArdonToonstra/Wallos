@@ -338,7 +338,7 @@ function loadSavingsChart(snapshots) {
 
 // ── Snapshot history list ─────────────────────────────────────────────────────
 
-function renderSnapshotHistory(snapshots, accounts) {
+function renderSnapshotHistory(snapshots) {
     const container = document.getElementById("snapshot-history-list");
     if (!container) return;
     if (!snapshots || snapshots.length === 0) return;
@@ -415,6 +415,8 @@ document.addEventListener("DOMContentLoaded", function () {
     // Load snapshots once, use for both chart and history list
     fetch("endpoints/savings/getsnapshots.php")
         .then(response => response.json())
+        // The endpoint returns every account; keep only the ones this page shows.
+        .then(snapshots => snapshots.filter(s => s.account_id in accountTypeMap))
         .then(snapshots => {
             loadSavingsChart(snapshots);
             renderSnapshotHistory(snapshots);
