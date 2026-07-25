@@ -1,6 +1,9 @@
 <?php
 require_once 'includes/connect.php';
 require_once 'includes/checkuser.php';
+ob_start();
+require_once 'includes/run_migrations.php';
+ob_end_clean();
 
 require_once 'includes/i18n/languages.php';
 require_once 'includes/i18n/getlang.php';
@@ -28,6 +31,13 @@ $stmt = $db->prepare('SELECT COUNT(*) as userCount FROM user');
 $result = $stmt->execute();
 $userCountResult = $result->fetchArray(SQLITE3_ASSOC);
 $userCount = $userCountResult['userCount'];
+
+if ($userCount == 0) {
+    $setupTokenFile = __DIR__ . '/db/setup_token.db';
+    if (!file_exists($setupTokenFile)) {
+        file_put_contents($setupTokenFile, bin2hex(random_bytes(32)));
+    }
+}
 
 if ($userCount > 0) {
     $stmt = $db->prepare('SELECT * FROM admin');
@@ -201,7 +211,7 @@ if (isset($_POST['username'])) {
     $requireValidation = false;
 
     if ($hasErrors == false) {
-        $query = "INSERT INTO user (username, firstname, lastname, email, password, main_currency, avatar, language, budget) VALUES (:username, :firstname, :lastname, :email, :password, :main_currency, :avatar, :language, :budget)";
+        $query = "INSERT INTO user (username, firstname, lastname, email, password, main_currency, avatar, language, budget, api_key) VALUES (:username, :firstname, :lastname, :email, :password, :main_currency, :avatar, :language, :budget, :api_key)";
         $stmt = $db->prepare($query);
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
         $stmt->bindValue(':username', $username, SQLITE3_TEXT);
@@ -213,6 +223,7 @@ if (isset($_POST['username'])) {
         $stmt->bindValue(':avatar', $avatar, SQLITE3_TEXT);
         $stmt->bindValue(':language', $language, SQLITE3_TEXT);
         $stmt->bindValue(':budget', 0, SQLITE3_INTEGER);
+        $stmt->bindValue(':api_key', bin2hex(random_bytes(32)), SQLITE3_TEXT);
         $result = $stmt->execute();
 
         if ($result) {
@@ -278,8 +289,8 @@ if (isset($_POST['username'])) {
                 $stmt->execute();
 
                 // Add settings for that user
-                $query = "INSERT INTO settings (dark_theme, monthly_price, convert_currency, remove_background, color_theme, hide_disabled, user_id, disabled_to_bottom, show_original_price, mobile_nav) 
-                          VALUES (2, 0, 0, 0, 'blue', 0, :user_id, 0, 0, 0)";
+                $query = "INSERT INTO settings (dark_theme, monthly_price, convert_currency, remove_background, color_theme, hide_disabled, user_id, disabled_to_bottom, show_original_price, mobile_nav, week_starts_sunday) 
+                          VALUES (2, 0, 0, 0, 'blue', 0, :user_id, 0, 0, 0, 0)";
                 $stmt = $db->prepare($query);
                 $stmt->bindValue(':user_id', $userId, SQLITE3_INTEGER);
                 $stmt->execute();
@@ -318,7 +329,7 @@ if (isset($_POST['username'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="<?= $theme == "light" ? "#FFFFFF" : "#222222" ?>" id="theme-color" />
+    <meta name="theme-color" content="<?= $theme == "light" ? "#FFFFFF" : "#12151C" ?>" id="theme-color" />
     <meta name="apple-mobile-web-app-title" content="Wallos">
     <title>Wallos - Subscription Tracker</title>
     <link rel="icon" type="image/png" href="images/icon/favicon.ico" sizes="16x16">
@@ -340,11 +351,27 @@ if (isset($_POST['username'])) {
         window.colorTheme = "<?= $colorTheme ?>";
     </script>
     <script type="text/javascript" src="scripts/registration.js?<?= $version ?>"></script>
+    <script type="text/javascript" src="scripts/auth-theme.js?<?= $version ?>"></script>
+    <script type="text/javascript" src="scripts/password-toggle.js?<?= $version ?>"></script>
 </head>
 
 <body class="<?= $languages[$lang]['dir'] ?>">
-    <div class="content">
-        <section class="container">
+    <button type="button" class="theme-toggle" id="theme-toggle" title="<?= translate('theme', $i18n) ?>"
+        aria-label="<?= translate('theme', $i18n) ?>">
+        <i class="fa-solid <?= $theme == "dark" ? "fa-sun" : "fa-moon" ?>"></i>
+    </button>
+    <div class="content auth-split">
+        <aside class="auth-brand" aria-hidden="true">
+            <div class="auth-brand-logo">
+                <?php include "images/siteicons/svg/logo.php"; ?>
+            </div>
+            <div class="auth-brand-text">
+                <h1><?= translate('auth_tagline', $i18n) ?></h1>
+                <p><?= translate('auth_tagline_sub', $i18n) ?></p>
+            </div>
+            <div class="auth-brand-footer">Wallos &mdash; Subscription Tracker</div>
+        </aside>
+        <section class="container wide">
             <header>
                 <div class="logo-image" title="Wallos - Subscription Tracker">
                     <?php include "images/siteicons/svg/logo.php"; ?>
@@ -353,7 +380,7 @@ if (isset($_POST['username'])) {
                     <?= translate('create_account', $i18n) ?>
                 </p>
             </header>
-            <form action="registration.php" method="post">
+            <form action="registration.php" method="post" class="registration-form">
                 <div class="form-group">
                     <label for="username"><?= translate('username', $i18n) ?>:</label>
                     <input type="text" id="username" name="username" autocomplete="username" required>
@@ -454,22 +481,49 @@ if (isset($_POST['username'])) {
                 ?>
                 <div class="separator">
                     <input type="button" class="secondary-button" value="<?= translate('restore_database', $i18n) ?>"
-                        id="restoreDB" onClick="openRestoreDBFileSelect()" />
-                    <input type="file" name="restoreDBFile" id="restoreDBFile" style="display: none;" onChange="restoreDB()"
-                        accept=".zip">
+                        onClick="openRestoreModal()" />
                 </div>
                 <?php
             } else {
                 ?>
-                <div class="separator">
-                    <input id="goToLoginButton" type="button" class="secondary-button"
-                        value="<?= translate('login', $i18n) ?>">
+                <div class="login-form-link account-switch">
+                    <span><?= translate('already_have_account', $i18n) ?></span>
+                    <a href="login.php"><?= translate('login', $i18n) ?></a>
                 </div>
                 <?php
             }
             ?>
         </section>
     </div>
+    <?php if ($userCount == 0) { ?>
+    <div id="restoreModalBackdrop" class="modal-backdrop" onclick="closeRestoreModal()">
+        <div id="restoreModal" class="subscription-modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3><?= translate('restore_database', $i18n) ?></h3>
+                <span class="fa-solid fa-xmark close-modal" onclick="closeRestoreModal()"></span>
+            </div>
+            <div class="modal-body">
+                <p><?= translate('restore_database_info', $i18n) ?></p>
+                <ul>
+                    <li><?= translate('setup_token_docker', $i18n) ?></li>
+                    <li><?= translate('setup_token_file', $i18n) ?></li>
+                </ul>
+                <div class="form-group">
+                    <input type="text" id="setupToken" placeholder="<?= translate('setup_token', $i18n) ?>" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <input type="button" class="secondary-button" value="<?= translate('select_backup_file', $i18n) ?>"
+                        onClick="openRestoreDBFileSelect()" />
+                    <input type="file" name="restoreDBFile" id="restoreDBFile" style="display: none;" onChange="onRestoreFileSelected()" accept=".zip">
+                    <span id="restoreFileName" style="font-size: 14px; margin-left: 8px;"></span>
+                </div>
+                <div class="form-group">
+                    <input type="button" value="<?= translate('restore_database', $i18n) ?>" onClick="restoreDB()" />
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php } ?>
     <?php
     require_once 'includes/footer.php';
     ?>

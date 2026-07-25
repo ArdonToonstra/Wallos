@@ -2,6 +2,7 @@
 
 require_once 'includes/header.php';
 require_once 'includes/getdbkeys.php';
+require_once 'includes/logo_theme_variant.php';
 
 include_once 'includes/list_subscriptions.php';
 
@@ -146,6 +147,8 @@ if ($sortOrder == "payment_method_id") {
 }
 
 $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden";
+
+$subscriptionsView = (isset($_COOKIE['subscriptionsView']) && $_COOKIE['subscriptionsView'] === 'grid') ? 'grid' : 'list';
 ?>
 <style>
   .logo-preview:after {
@@ -154,40 +157,16 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
 </style>
 
 <section class="contain">
-  <?php
-  if ($isAdmin && $settings['update_notification']) {
-    if (!is_null($settings['latest_version'])) {
-      $latestVersion = $settings['latest_version'];
-      if (version_compare($version, $latestVersion) == -1) {
-        ?>
-        <div class="update-banner">
-          <?= translate('new_version_available', $i18n) ?>:
-          <span><a href="https://github.com/ellite/Wallos/releases/tag/<?= htmlspecialchars($latestVersion) ?>"
-              target="_blank" rel="noreferer">
-              <?= htmlspecialchars($latestVersion) ?>
-            </a></span>
-        </div>
-        <?php
-      }
-    }
-  }
-
-  if ($demoMode) {
-    ?>
-    <div class="demo-banner">
-      Running in <b>Demo Mode</b>, certain actions and settings are disabled.<br>
-      The database will be reset every 120 minutes.
-    </div>
-    <?php
-  }
-  ?>
-
   <header class="<?= $headerClass ?>" id="main-actions">
     <button class="button" onClick="addSubscription()">
       <i class="fa-solid fa-circle-plus"></i>
       <?= translate('new_subscription', $i18n) ?>
     </button>
     <div class="top-actions">
+      <button class="button secondary-button mobile-search-toggle" id="mobile-search-toggle"
+        title="<?= translate('search', $i18n) ?>" onClick="toggleMobileSearch()">
+        <i class="fa-solid fa-magnifying-glass"></i>
+      </button>
       <div class="search">
         <input type="text" autocomplete="off" name="search" id="search" placeholder="<?= translate('search', $i18n) ?>"
           onkeyup="searchSubscriptions()" />
@@ -209,9 +188,20 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
         </button>
         <?php include 'includes/sort_options.php'; ?>
       </div>
+
+      <div class="view-toggle" id="view-toggle">
+        <button type="button" class="view-toggle-button<?= $subscriptionsView === 'list' ? ' selected' : '' ?>"
+          id="view-list-button" title="<?= translate('list_view', $i18n) ?>" onClick="setSubscriptionsView('list')">
+          <i class="fa-solid fa-list"></i>
+        </button>
+        <button type="button" class="view-toggle-button<?= $subscriptionsView === 'grid' ? ' selected' : '' ?>"
+          id="view-grid-button" title="<?= translate('grid_view', $i18n) ?>" onClick="setSubscriptionsView('grid')">
+          <i class="fa-solid fa-table-cells-large"></i>
+        </button>
+      </div>
     </div>
   </header>
-  <div class="subscriptions" id="subscriptions">
+  <div class="subscriptions<?= $subscriptionsView === 'grid' ? ' grid-view' : '' ?>" id="subscriptions">
     <?php
     $formatter = new IntlDateFormatter(
       'en', // Force English locale
@@ -222,6 +212,7 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       'MMM d, yyyy'
     );
 
+    $print = [];
     foreach ($subscriptions as $subscription) {
       if ($subscription['inactive'] == 1 && isset($settings['hideDisabledSubscriptions']) && $settings['hideDisabledSubscriptions'] === 'true') {
         continue;
@@ -229,10 +220,13 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       $id = $subscription['id'];
       $print[$id]['id'] = $id;
       $print[$id]['logo'] = $subscription['logo'] != "" ? "images/uploads/logos/" . $subscription['logo'] : "";
+      $print[$id]['logo_text_color'] = $subscription['logo_text_color'] ?? null;
+      $print[$id]['logo_variant'] = !empty($subscription['logo_variant']) ? "images/uploads/logos/" . $subscription['logo_variant'] : null;
       $print[$id]['name'] = $subscription['name'];
       $cycle = $subscription['cycle'];
       $frequency = $subscription['frequency'];
       $print[$id]['billing_cycle'] = getBillingCycle($cycle, $frequency, $i18n);
+      $print[$id]['one_time'] = ($cycle == 5);
       $paymentMethodId = $subscription['payment_method_id'];
       $print[$id]['currency_code'] = $currencies[$subscription['currency_id']]['code'];
       $currencyId = $subscription['currency_id'];
@@ -282,6 +276,18 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
     if (isset($print)) {
       printSubscriptions($print, $sort, $categories, $members, $i18n, $colorTheme, "", $settings['disabledToBottom'], $settings['mobileNavigation'], $settings['showSubscriptionProgress'], $currencies, $lang);
     }
+
+    $googleSearchEnabled = false;
+    if ($db->querySingle("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='google_search'") > 0) {
+      $googleSearchStmt = $db->prepare("SELECT COUNT(*) AS count FROM google_search WHERE user_id = :userId AND api_key != ''");
+      $googleSearchStmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+      $googleSearchResult = $googleSearchStmt->execute();
+      if ($googleSearchResult) {
+        $googleSearchRow = $googleSearchResult->fetchArray(SQLITE3_ASSOC);
+        $googleSearchEnabled = $googleSearchRow && $googleSearchRow['count'] > 0;
+      }
+    }
+
     $db->close();
 
     if (count($subscriptions) == 0) {
@@ -320,14 +326,30 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       <input type="hidden" id="logo-url" name="logo-url">
       <div id="logo-search-button" class="image-button medium disabled" title="<?= translate('search_logo', $i18n) ?>"
         onClick="searchLogo()">
-        <?php include "images/siteicons/svg/websearch.php"; ?>
+        <i class="fa-solid fa-magnifying-glass"></i>
       </div>
       <input type="hidden" id="id" name="id">
-      <div id="logo-search-results" class="logo-search">
+      <div class="logo-search-backdrop" id="logo-search-backdrop" onClick="closeLogoSearch()"></div>
+      <div id="logo-search-results" class="logo-search"<?= !empty($googleSearchEnabled) ? ' data-google-search="1"' : '' ?>>
+        <button type="button" class="close-logo-search" onClick="closeLogoSearch()" title="<?= translate('cancel', $i18n) ?>">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
         <header>
-          <?= translate('web_search', $i18n) ?>
-          <span class="fa-solid fa-xmark close-logo-search" onClick="closeLogoSearch()"></span>
+          <h3 id="logo-search-title" data-title="<?= translate('web_search', $i18n) ?>">
+            <?= translate('web_search', $i18n) ?>
+          </h3>
         </header>
+        <div class="logo-search-controls">
+          <div class="logo-search-query">
+            <input type="text" id="logo-search-query" autocomplete="off" inputmode="search"
+              placeholder="<?= translate('search_logo', $i18n) ?>"
+              aria-label="<?= translate('search_logo', $i18n) ?>">
+            <button type="button" id="logo-search-submit" title="<?= translate('search', $i18n) ?>">
+              <i class="fa-solid fa-magnifying-glass"></i>
+            </button>
+          </div>
+          <div id="logo-search-nav" class="logo-search-nav"></div>
+        </div>
         <div id="logo-search-images"></div>
       </div>
     </div>
@@ -380,7 +402,7 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
             </select>
           </div>
         </div>
-        <div class="split33">
+        <div class="split33" id="auto-renew-group">
           <label><?= translate('auto_renewal', $i18n) ?></label>
           <div class="inline height50">
             <input type="checkbox" id="auto_renew" name="auto_renew" checked>
@@ -405,7 +427,8 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
         </button>
         <div class="split50">
           <label for="next_payment" class="split-label">
-            <?= translate('next_payment', $i18n) ?>
+            <span id="next-payment-label-recurring"><?= translate('next_payment', $i18n) ?></span>
+            <span id="next-payment-label-onetime" style="display:none"><?= translate('payment_date', $i18n) ?></span>
             <div id="autofill-next-payment-button" class="autofill-next-payment hideOnDesktop"
               title="<?= translate('calculate_next_payment_date', $i18n) ?>" onClick="autoFillNextPaymentDate(event)">
               <i class="fa-solid fa-wand-magic-sparkles"></i>
@@ -464,12 +487,12 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
       </select>
     </div>
 
-    <div class="form-group-inline grow">
+    <div class="form-group-inline grow" id="notifications-group">
       <input type="checkbox" id="notifications" name="notifications" onchange="toggleNotificationDays()">
       <label for="notifications" class="grow"><?= translate('enable_notifications', $i18n) ?></label>
     </div>
 
-    <div class="form-group">
+    <div class="form-group" id="notify-days-cancellation-group">
       <div class="inline">
         <div class="split66 mobile-split-50">
           <label for="notify_days_before"><?= translate('notify_me', $i18n) ?></label>
@@ -543,6 +566,8 @@ $headerClass = count($subscriptions) > 0 ? "main-actions" : "main-actions hidden
     </div>
   </form>
 </section>
+
+<?php require_once 'includes/subscription_details_popup.php'; ?>
 <script src="scripts/subscriptions.js?<?= $version ?>"></script>
 <?php
 if (isset($_GET['add'])) {

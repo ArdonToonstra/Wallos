@@ -4,6 +4,8 @@ require_once '../../includes/connect_endpoint.php';
 require_once '../../includes/validate_endpoint.php';
 require_once '../../includes/inputvalidation.php';
 require_once '../../includes/getsettings.php';
+require_once '../../includes/ssrf_helper.php';
+require_once '../../includes/logo_theme_variant.php';
 
 if (!file_exists('../../images/uploads/logos')) {
     mkdir('../../images/uploads/logos', 0777, true);
@@ -31,26 +33,25 @@ function getLogoFromUrl($url, $uploadDir, $name, $settings, $i18n)
 
     for ($i = 0; $i <= $maxRedirects; $i++) {
         if (!filter_var($currentUrl, FILTER_VALIDATE_URL) || !preg_match('/^https?:\/\//i', $currentUrl)) {
-            $response = ["success" => false, "message" => "Invalid URL format."];
-            echo json_encode($response);
-            exit();
+            return ['success' => false, 'message' => 'Invalid URL format.'];
         }
 
         $parts = parse_url($currentUrl);
         $host = $parts['host'];
         $port = $parts['port'] ?? ($parts['scheme'] === 'https' ? 443 : 80);
+        
         $ip = gethostbyname($host);
 
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
-            $response = ["success" => false, "message" => "Invalid IP Address."];
-            echo json_encode($response);
-            exit();
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false 
+            || is_cgnat_ip($ip)) {
+            return ['success' => false, 'message' => 'Invalid IP Address.'];
         }
 
         $ch = curl_init($currentUrl);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false); // Manual handling to re-validate IPs
+
 
         curl_setopt($ch, CURLOPT_RESOLVE, ["$host:$port:$ip"]);
 
@@ -59,81 +60,84 @@ function getLogoFromUrl($url, $uploadDir, $name, $settings, $i18n)
 
         if ($httpCode >= 300 && $httpCode < 400) {
             $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL);
-            curl_close($ch);
+            unset($ch);
 
             if (!$redirectUrl) {
                 break;
             }
 
             $currentUrl = $redirectUrl;
-            continue;
+            continue; 
         }
 
         if ($imageData !== false && $httpCode === 200) {
             $timestamp = time();
             $fileName = $timestamp . '-' . sanitizeFilename($name) . '.png';
-            $uploadDir = '../../images/uploads/logos/';
-            $uploadFile = $uploadDir . $fileName;
+            $uploadFile = $uploadDir . $fileName; // Note: Use the provided $uploadDir variable
 
             if (saveLogo($imageData, $uploadFile, $name, $settings)) {
-                curl_close($ch);
-                return $fileName;
+                unset($ch);
+                return ['success' => true, 'filename' => $fileName];
             }
         }
 
-        echo translate('error_fetching_image', $i18n) . ": " . curl_error($ch);
-        curl_close($ch);
-        return "";
+        $error = curl_error($ch);
+        unset($ch);
+        return ['success' => false, 'message' => translate('error_fetching_image', $i18n) . ': ' . $error];
     }
 
-    return "";
+    return ['success' => false, 'message' => translate('error_fetching_image', $i18n)];
 }
 
 function saveLogo($imageData, $uploadFile, $name, $settings)
 {
     $image = imagecreatefromstring($imageData);
     $removeBackground = isset($settings['removeBackground']) && $settings['removeBackground'] === 'true';
+
     if ($image !== false) {
         $tempFile = tempnam(sys_get_temp_dir(), 'logo');
+
+        imagealphablending($image, false);
+        imagesavealpha($image, true);
         imagepng($image, $tempFile);
         imagedestroy($image);
 
-        if (extension_loaded('imagick')) {
-            $imagick = new Imagick($tempFile);
-            if ($removeBackground) {
-                $fuzz = Imagick::getQuantum() * 0.1; // 10%
-                $imagick->transparentPaintImage("rgb(247, 247, 247)", 0, $fuzz, false);
-            }
-            $imagick->setImageFormat('png');
-            $imagick->writeImage($uploadFile);
+        $newImage = imagecreatefrompng($tempFile);
+        if ($newImage !== false) {
+            imagealphablending($newImage, false);
+            imagesavealpha($newImage, true);
 
-            $imagick->clear();
-            $imagick->destroy();
-        } else {
-            // Alternative method if Imagick is not available
-            $newImage = imagecreatefrompng($tempFile);
-            if ($newImage !== false) {
-                if ($removeBackground) {
+            if ($removeBackground) {
+                require_once __DIR__ . '/../../includes/gd_background_removal.php';
+                // On palette images imagecolorat() returns palette indexes, not RGB values
+                if (!imageistruecolor($newImage)) {
+                    imagepalettetotruecolor($newImage);
                     imagealphablending($newImage, false);
                     imagesavealpha($newImage, true);
-                    $transparent = imagecolorallocatealpha($newImage, 0, 0, 0, 127);
-                    imagefill($newImage, 0, 0, $transparent);  // Fill the entire image with transparency
-                    imagepng($newImage, $uploadFile);
-                    imagedestroy($newImage);
                 }
-                imagepng($newImage, $uploadFile);
-                imagedestroy($newImage);
-            } else {
-                unlink($tempFile);
-                return false;
+                // Paint out the corner color with ~10% fuzz
+                $corner = imagecolorat($newImage, 0, 0);
+                if ((($corner >> 24) & 0x7F) !== 127) {
+                    gdRemoveBackgroundColor($newImage, ($corner >> 16) & 0xFF, ($corner >> 8) & 0xFF, $corner & 0xFF);
+                }
             }
-        }
-        unlink($tempFile);
 
+            // Crop/trim transparent margins
+            require_once __DIR__ . '/../../includes/gd_background_removal.php';
+            $newImage = gdCropTransparent($newImage, 2);
+
+            imagepng($newImage, $uploadFile);
+            imagedestroy($newImage);
+        } else {
+            unlink($tempFile);
+            return false;
+        }
+
+        unlink($tempFile);
         return true;
-    } else {
-        return false;
     }
+
+    return false;
 }
 
 function resizeAndUploadLogo($uploadedFile, $uploadDir, $name, $settings)
@@ -155,7 +159,6 @@ function resizeAndUploadLogo($uploadedFile, $uploadDir, $name, $settings)
             $width = $fileInfo[0];
             $height = $fileInfo[1];
 
-            // Load the image based on its format
             if ($fileExtension === 'png') {
                 $image = imagecreatefrompng($uploadFile);
             } elseif ($fileExtension === 'jpg' || $fileExtension === 'jpeg') {
@@ -165,14 +168,18 @@ function resizeAndUploadLogo($uploadedFile, $uploadDir, $name, $settings)
             } elseif ($fileExtension === 'webp') {
                 $image = imagecreatefromwebp($uploadFile);
             } else {
-                // Handle other image formats as needed
                 return "";
             }
 
-            // Enable alpha channel (transparency) for PNG images
             if ($fileExtension === 'png') {
                 imagesavealpha($image, true);
             }
+
+            // Crop/trim transparent margins (ensure we update dimensions after cropping)
+            require_once __DIR__ . '/../../includes/gd_background_removal.php';
+            $image = gdCropTransparent($image, 2);
+            $width = imagesx($image);
+            $height = imagesy($image);
 
             $newWidth = $width;
             $newHeight = $height;
@@ -232,6 +239,7 @@ $notes = validate($_POST["notes"]);
 $url = validate($_POST['url']);
 $logoUrl = validate($_POST['logo-url']);
 $logo = "";
+$logoError = "";
 $notify = isset($_POST['notifications']) ? true : false;
 $notifyDaysBefore = $_POST['notify_days_before'];
 $inactive = isset($_POST['inactive']) ? true : false;
@@ -242,8 +250,23 @@ if ($replacementSubscriptionId == 0 || $inactive == 0) {
     $replacementSubscriptionId = null;
 }
 
+if ($replacementSubscriptionId !== null) {
+    $ownerCheck = $db->prepare("SELECT id FROM subscriptions WHERE id = :id AND user_id = :userId");
+    $ownerCheck->bindParam(':id', $replacementSubscriptionId, SQLITE3_INTEGER);
+    $ownerCheck->bindParam(':userId', $userId, SQLITE3_INTEGER);
+    $ownerResult = $ownerCheck->execute();
+    if (!$ownerResult || !$ownerResult->fetchArray()) {
+        $replacementSubscriptionId = null;
+    }
+}
+
 if ($logoUrl !== "") {
-    $logo = getLogoFromUrl($logoUrl, '../../images/uploads/logos/', $name, $settings, $i18n);
+    $result = getLogoFromUrl($logoUrl, '../../images/uploads/logos/', $name, $settings, $i18n);
+    if ($result['success']) {
+        $logo = $result['filename'];
+    } else {
+        $logoError = $result['message'];
+    }
 } else {
     if (!empty($_FILES['logo']['name'])) {
         $fileType = mime_content_type($_FILES['logo']['tmp_name']);
@@ -255,17 +278,49 @@ if ($logoUrl !== "") {
     }
 }
 
+$logoTextColor = null;
+$logoVariant = null;
+$removeBackgroundEnabled = isset($settings['removeBackground']) && $settings['removeBackground'] === 'true';
+
+// Themed variant generation piggybacks on the same "remove background"
+// setting: both only make sense for logos we're already reprocessing, and
+// this avoids running pixel classification on every single upload.
+if ($logo !== "" && $removeBackgroundEnabled) {
+    $logoExtension = strtolower(pathinfo($logo, PATHINFO_EXTENSION));
+    $logoPath = '../../images/uploads/logos/' . $logo;
+
+    if ($logoExtension === 'png' || $logoExtension === 'webp') {
+        $sourceImage = $logoExtension === 'png' ? imagecreatefrompng($logoPath) : imagecreatefromwebp($logoPath);
+
+        if ($sourceImage !== false) {
+            imagealphablending($sourceImage, false);
+            imagesavealpha($sourceImage, true);
+
+            $logoTextColor = classifyLogoTextColor($sourceImage);
+
+            if ($logoTextColor !== null) {
+                $variantImage = generateThemedLogoVariant($sourceImage);
+                $logoVariant = pathinfo($logo, PATHINFO_FILENAME) . '-variant.png';
+                imagepng($variantImage, '../../images/uploads/logos/' . $logoVariant);
+                imagedestroy($variantImage);
+            }
+
+            imagedestroy($sourceImage);
+        }
+    }
+}
+
 if (!$isEdit) {
     $sql = "INSERT INTO subscriptions (
-                        name, logo, price, share_percentage, currency_id, next_payment, cycle, frequency, notes, 
-                        payment_method_id, payer_user_id, category_id, notify, inactive, url, 
+                        name, logo, price, share_percentage, currency_id, next_payment, cycle, frequency, notes,
+                        payment_method_id, payer_user_id, category_id, notify, inactive, url,
                         notify_days_before, user_id, cancellation_date, replacement_subscription_id,
-                        auto_renew, start_date
+                        auto_renew, start_date, logo_text_color, logo_variant
                     ) VALUES (
-                        :name, :logo, :price, :sharePercentage, :currencyId, :nextPayment, :cycle, :frequency, :notes, 
-                        :paymentMethodId, :payerUserId, :categoryId, :notify, :inactive, :url, 
+                        :name, :logo, :price, :sharePercentage, :currencyId, :nextPayment, :cycle, :frequency, :notes,
+                        :paymentMethodId, :payerUserId, :categoryId, :notify, :inactive, :url,
                         :notifyDaysBefore, :userId, :cancellationDate, :replacement_subscription_id,
-                        :autoRenew, :startDate
+                        :autoRenew, :startDate, :logoTextColor, :logoVariant
                     )";
 } else {
     $id = $_POST['id'];
@@ -291,7 +346,7 @@ if (!$isEdit) {
                         replacement_subscription_id = :replacement_subscription_id";
 
     if ($logo != "") {
-        $sql .= ", logo = :logo";
+        $sql .= ", logo = :logo, logo_text_color = :logoTextColor, logo_variant = :logoVariant";
     }
 
     $sql .= " WHERE id = :id AND user_id = :userId";
@@ -301,6 +356,8 @@ $stmt = $db->prepare($sql);
 $stmt->bindParam(':name', $name, SQLITE3_TEXT);
 if ($logo != "") {
     $stmt->bindParam(':logo', $logo, SQLITE3_TEXT);
+    $stmt->bindParam(':logoTextColor', $logoTextColor, SQLITE3_TEXT);
+    $stmt->bindParam(':logoVariant', $logoVariant, SQLITE3_TEXT);
 }
 $stmt->bindParam(':price', $price, SQLITE3_FLOAT);
 $stmt->bindParam(':sharePercentage', $sharePercentage, SQLITE3_INTEGER);
@@ -329,9 +386,11 @@ if ($stmt->execute()) {
     $success['status'] = "Success";
     $text = $isEdit ? "updated" : "added";
     $success['message'] = translate('subscription_' . $text . '_successfuly', $i18n);
-    $json = json_encode($success);
+    if ($logoError !== "") {
+        $success['logo_warning'] = $logoError;
+    }
     header('Content-Type: application/json');
-    echo $json;
+    echo json_encode($success);
     exit();
 } else {
     echo translate('error', $i18n) . ": " . $db->lastErrorMsg();

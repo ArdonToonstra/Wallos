@@ -148,7 +148,7 @@ $stmt->bindValue(':id', $currency, SQLITE3_TEXT);
 $row = $stmt->execute();
 $main_currency = $row->fetchArray()['code'];
 
-$query = "INSERT INTO user (username, email, password, main_currency, avatar, language, budget) VALUES (:username, :email, :password, :main_currency, :avatar, :language, :budget)";
+$query = "INSERT INTO user (username, email, password, main_currency, avatar, language, budget, api_key) VALUES (:username, :email, :password, :main_currency, :avatar, :language, :budget, :api_key)";
 $stmt = $db->prepare($query);
 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 $stmt->bindValue(':username', $username, SQLITE3_TEXT);
@@ -158,6 +158,7 @@ $stmt->bindValue(':main_currency', 1, SQLITE3_TEXT);
 $stmt->bindValue(':avatar', $avatar, SQLITE3_TEXT);
 $stmt->bindValue(':language', $language, SQLITE3_TEXT);
 $stmt->bindValue(':budget', 0, SQLITE3_INTEGER);
+$stmt->bindValue(':api_key', bin2hex(random_bytes(32)), SQLITE3_TEXT);
 $result = $stmt->execute();
 
 if ($result) {
@@ -223,8 +224,8 @@ if ($result) {
         $stmt->execute();
 
         // Add settings for that user
-        $query = "INSERT INTO settings (dark_theme, monthly_price, convert_currency, remove_background, color_theme, hide_disabled, user_id, disabled_to_bottom, show_original_price, mobile_nav) 
-                        VALUES (2, 0, 0, 0, 'blue', 0, :user_id, 0, 0, 0)";
+        $query = "INSERT INTO settings (dark_theme, monthly_price, convert_currency, remove_background, color_theme, hide_disabled, user_id, disabled_to_bottom, show_original_price, mobile_nav, week_starts_sunday) 
+                VALUES (2, 0, 0, 0, 'blue', 0, :user_id, 0, 0, 0, 0)";
         $stmt = $db->prepare($query);
         $stmt->bindValue(':user_id', $newUserId, SQLITE3_INTEGER);
         $stmt->execute();

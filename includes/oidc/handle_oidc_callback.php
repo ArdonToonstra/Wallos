@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/../oidc_settings.php';
+
 function generate_username_from_email($email)
 {
     if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -10,13 +12,24 @@ function generate_username_from_email($email)
     return $username;
 }
 
-// get OIDC settings
-$stmt = $db->prepare('SELECT * FROM oauth_settings WHERE id = 1');
-$result = $stmt->execute();
-$oidcSettings = $result->fetchArray(SQLITE3_ASSOC);
+require_once __DIR__ . '/../ssrf_helper.php';
+
+$oidcConfiguration = wallos_get_effective_oidc_configuration($db);
+if ($oidcConfiguration['enabled'] !== 1 || !$oidcConfiguration['is_configured']) {
+    header("Location: login.php?error=oidc_user_not_found");
+    exit();
+}
+
+$oidcSettings = $oidcConfiguration['settings'];
 
 $tokenUrl = $oidcSettings['token_url'];
 $redirectUri = $oidcSettings['redirect_url'];
+
+$tokenUrlInfo = validate_oidc_endpoint_url($tokenUrl, $db);
+if ($tokenUrlInfo === false) {
+    header("Location: login.php?error=oidc_invalid_config");
+    exit();
+}
 
 $postFields = [
     'grant_type' => 'authorization_code',
@@ -31,8 +44,9 @@ curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postFields));
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+curl_setopt($ch, CURLOPT_RESOLVE, ["{$tokenUrlInfo['host']}:{$tokenUrlInfo['port']}:{$tokenUrlInfo['ip']}"]);
 $response = curl_exec($ch);
-curl_close($ch);
+unset($ch);
 
 $tokenData = json_decode($response, true);
 if (!$tokenData || !isset($tokenData['access_token'])) {
@@ -41,13 +55,20 @@ if (!$tokenData || !isset($tokenData['access_token'])) {
 
 $userInfoUrl = $oidcSettings['user_info_url'];
 
+$userInfoUrlInfo = validate_oidc_endpoint_url($userInfoUrl, $db);
+if ($userInfoUrlInfo === false) {
+    header("Location: login.php?error=oidc_invalid_config");
+    exit();
+}
+
 $ch = curl_init($userInfoUrl);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Authorization: Bearer ' . $tokenData['access_token']
 ]);
+curl_setopt($ch, CURLOPT_RESOLVE, ["{$userInfoUrlInfo['host']}:{$userInfoUrlInfo['port']}:{$userInfoUrlInfo['ip']}"]);
 $response = curl_exec($ch);
-curl_close($ch);
+unset($ch);
 
 $userInfo = json_decode($response, true);
 if (!$userInfo || !isset($userInfo[$oidcSettings['user_identifier_field']])) {
@@ -73,6 +94,14 @@ if ($userData) {
     if (!$email) {
         // Login failed, we have nothing to go on with, redirect to login page with error
         header("Location: login.php?error=oidc_user_not_found");
+        exit();
+    }
+
+    // Require email_verified when the setting is enabled (default on).
+    // Prevents account takeover by an attacker who presents an unverified email
+    // matching an existing local account at a permissive or attacker-controlled IdP.
+    if ($oidcSettings['require_email_verified'] && ($userInfo['email_verified'] ?? false) !== true) {
+        header("Location: login.php?error=oidc_email_not_verified");
         exit();
     }
 

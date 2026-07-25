@@ -5,12 +5,14 @@ use PHPMailer\PHPMailer\Exception;
 
 require_once 'validate.php';
 require_once __DIR__ . '/../../includes/connect_endpoint_crontabs.php';
+require_once __DIR__ . '/../../includes/ssrf_helper.php';
 
 require __DIR__ . '/../../libs/PHPMailer/PHPMailer.php';
 require __DIR__ . '/../../libs/PHPMailer/SMTP.php';
 require __DIR__ . '/../../libs/PHPMailer/Exception.php';
 
 require __DIR__ . '/../../includes/currency_formatter.php';
+require __DIR__ . '/../../includes/budget_period_calculations.php';
 
 require 'settimezone.php';
 
@@ -25,6 +27,8 @@ if (php_sapi_name() == 'cli') {
 $query = "SELECT id, username FROM user";
 $stmt = $db->prepare($query);
 $usersToNotify = $stmt->execute();
+$periodSummaryColumnCheck = $db->query("SELECT * FROM pragma_table_info('notification_settings') WHERE name='period_summary_at_period_start'");
+$hasPeriodSummaryColumn = $periodSummaryColumnCheck && $periodSummaryColumnCheck->fetchArray(SQLITE3_ASSOC);
 
 function getDaysText($days)
 {
@@ -49,6 +53,34 @@ function formatPrice($price, $currencyCode, $currencySymbol)
     return $formattedPrice;
 }
 
+function buildNotificationMessage($name, $perUser, $periodSummaryLine, $includePeriodSummary)
+{
+    if (empty($perUser) && !$includePeriodSummary) {
+        return "";
+    }
+
+    if (empty($perUser)) {
+        return ($name ? $name . ", " : "") . $periodSummaryLine . "\n";
+    }
+
+    if ($name) {
+        $message = $name . ", the following subscriptions are up for renewal:\n";
+    } else {
+        $message = "The following subscriptions are up for renewal:\n";
+    }
+
+    foreach ($perUser as $subscription) {
+        $dayText = getDaysText($subscription['days']);
+        $message .= $subscription['name'] . " for " . $subscription['formatted_price'] . " (" . $dayText . ")\n";
+    }
+
+    if ($includePeriodSummary) {
+        $message .= "\n" . $periodSummaryLine . "\n";
+    }
+
+    return $message;
+}
+
 while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
     $userId = $userToNotify['id'];
     if (php_sapi_name() !== 'cli') {
@@ -56,6 +88,7 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
     }
 
     $days = 1;
+    $periodSummaryAtPeriodStart = 0;
     $emailNotificationsEnabled = false;
     $gotifyNotificationsEnabled = false;
     $telegramNotificationsEnabled = false;
@@ -68,13 +101,18 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
     $serverchanNotificationsEnabled = false;
 
     // Get notification settings (how many days before the subscription ends should the notification be sent)
-    $query = "SELECT days FROM notification_settings WHERE user_id = :userId";
+    $query = $hasPeriodSummaryColumn
+        ? "SELECT days, period_summary_at_period_start FROM notification_settings WHERE user_id = :userId"
+        : "SELECT days FROM notification_settings WHERE user_id = :userId";
     $stmt = $db->prepare($query);
     $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
     $result = $stmt->execute();
 
     if ($row = $result->fetchArray(SQLITE3_ASSOC)) {
         $days = $row['days'];
+        if ($hasPeriodSummaryColumn) {
+            $periodSummaryAtPeriodStart = (int) ($row['period_summary_at_period_start'] ?? 0);
+        }
     }
 
     // Check if email notifications are enabled and get the settings
@@ -252,6 +290,41 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
             $categories[$rowCategory['id']] = $rowCategory;
         }
 
+        $currentDate = new DateTime('now');
+
+        $query = "SELECT main_currency, period_budget, budget_period_type, budget_period_anchor_date FROM user WHERE id = :userId";
+        $stmt = $db->prepare($query);
+        $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+        $result = $stmt->execute();
+        $userBudgetConfig = $result->fetchArray(SQLITE3_ASSOC);
+
+        $mainCurrencyId = $userBudgetConfig['main_currency'];
+        $budgetPeriodType = sanitizeBudgetPeriodType($userBudgetConfig['budget_period_type'] ?? 'monthly');
+        $budgetPeriodAnchorDate = sanitizeBudgetAnchorDate($userBudgetConfig['budget_period_anchor_date'] ?? getDefaultBudgetAnchorDate());
+        $activeBudgetPeriod = getActiveBudgetPeriod($currentDate, $budgetPeriodType, $budgetPeriodAnchorDate);
+        $isPeriodStart = $activeBudgetPeriod['start']->format('Y-m-d') === $currentDate->format('Y-m-d');
+
+        $query = "SELECT price, currency_id, next_payment, cycle, frequency, inactive, auto_renew FROM subscriptions WHERE user_id = :userId AND inactive = 0";
+        $stmt = $db->prepare($query);
+        $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+        $result = $stmt->execute();
+        $periodSubscriptions = [];
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $periodSubscriptions[] = $row;
+        }
+
+        $amountNeededThisPeriod = computeAmountNeededInPeriod($periodSubscriptions, $currentDate, $activeBudgetPeriod['end'], $db, $userId);
+        $mainCurrencyCode = $currencies[$mainCurrencyId]['code'] ?? 'USD';
+        $mainCurrencySymbol = $currencies[$mainCurrencyId]['symbol'] ?? '$';
+        $periodSummaryLine = translate('amount_for_pay_period', $i18n) . ": " . formatPrice($amountNeededThisPeriod, $mainCurrencyCode, $mainCurrencySymbol);
+
+        if (!empty($userBudgetConfig['period_budget']) && $userBudgetConfig['period_budget'] > 0) {
+            $remaining = max(0, $userBudgetConfig['period_budget'] - $amountNeededThisPeriod);
+            $periodSummaryLine .= " | " . translate('remaining', $i18n) . ": " . formatPrice($remaining, $mainCurrencyCode, $mainCurrencySymbol);
+        }
+
+        $sendPeriodStartSummaryOnly = $periodSummaryAtPeriodStart === 1 && $isPeriodStart;
+
         $query = "SELECT * FROM subscriptions WHERE user_id = :user_id AND notify = :notify AND inactive = :inactive ORDER BY payer_user_id ASC";
         $stmt = $db->prepare($query);
         $stmt->bindValue(':user_id', $userId, SQLITE3_INTEGER);
@@ -261,7 +334,6 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
 
         $notify = [];
         $i = 0;
-        $currentDate = new DateTime('now');
         while ($rowSubscription = $resultSubscriptions->fetchArray(SQLITE3_ASSOC)) {
             if ($rowSubscription['notify_days_before'] !== -1) {
                 $daysToCompare = $rowSubscription['notify_days_before'];
@@ -295,10 +367,22 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
             }
         }
 
+        if (empty($notify) && $sendPeriodStartSummaryOnly) {
+            $defaultPayerUserId = array_key_first($household);
+            if ($defaultPayerUserId !== null) {
+                $notify[$defaultPayerUserId] = [];
+            }
+        }
+
         if (!empty($notify)) {
 
             // Email notifications if enabled
             if ($emailNotificationsEnabled) {
+                // Re-validate at send time: a save-time check alone is bypassable via
+                // DNS rebinding between when the host was saved and when the cron fires.
+                if (!validate_smtp_host($email['smtpAddress'], (int) $email['smtpPort'], $db)) {
+                    echo "SSRF attempt detected for SMTP host. Email notifications not sent.<br />";
+                } else {
 
                 $stmt = $db->prepare('SELECT * FROM user WHERE id = :user_id');
                 $stmt->bindValue(':user_id', $userId, SQLITE3_INTEGER);
@@ -308,11 +392,9 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                 $defaultName = $defaultUser['username'];
 
                 foreach ($notify as $userId => $perUser) {
-                    $message = "The following subscriptions are up for renewal:\n";
-
-                    foreach ($perUser as $subscription) {
-                        $dayText = getDaysText($subscription['days']);
-                        $message .= $subscription['name'] . " for " . $subscription['formatted_price'] . " (" . $dayText . ")\n";
+                    $message = buildNotificationMessage("", $perUser, $periodSummaryLine, $sendPeriodStartSummaryOnly);
+                    if ($message === "") {
+                        continue;
                     }
 
                     $smtpAuth = (isset($email["smtpUsername"]) && $email["smtpUsername"] != "") || (isset($email["smtpPassword"]) && $email["smtpPassword"] != "");
@@ -320,6 +402,7 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                     $mail = new PHPMailer(true);
                     $mail->CharSet = "UTF-8";
                     $mail->isSMTP();
+                    $mail->Timeout = 15;
 
                     $mail->Host = $email['smtpAddress'];
                     $mail->SMTPAuth = $smtpAuth;
@@ -372,113 +455,123 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                         echo "Error sending notifications: " . $mail->ErrorInfo . "<br />";
                     }
                 }
+                }
             }
 
             // Discord notifications if enabled
             if ($discordNotificationsEnabled) {
-                foreach ($notify as $userId => $perUser) {
-                    // Get name of user from household table
-                    $stmt = $db->prepare('SELECT * FROM household WHERE id = :userId');
-                    $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
-                    $result = $stmt->execute();
-                    $user = $result->fetchArray(SQLITE3_ASSOC);
+                $ssrf = is_url_safe_for_ssrf($discord['webhook_url'], $db, $userId);
+                if (!$ssrf) {
+                    echo "SSRF attempt detected for Discord webhook URL. Notifications not sent.<br />";
+                } else {
+                    foreach ($notify as $userId => $perUser) {
+                        // Get name of user from household table
+                        $stmt = $db->prepare('SELECT * FROM household WHERE id = :userId');
+                        $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+                        $result = $stmt->execute();
+                        $user = $result->fetchArray(SQLITE3_ASSOC);
 
-                    $title = translate('wallos_notification', $i18n);
+                        $title = translate('wallos_notification', $i18n);
 
-                    if ($user['name']) {
-                        $message = $user['name'] . ", the following subscriptions are up for renewal:\n";
-                    } else {
-                        $message = "The following subscriptions are up for renewal:\n";
-                    }
+                        $name = $user['name'] ?? "";
+                        $message = buildNotificationMessage($name, $perUser, $periodSummaryLine, $sendPeriodStartSummaryOnly);
+                        if ($message === "") {
+                            continue;
+                        }
 
-                    foreach ($perUser as $subscription) {
-                        $dayText = getDaysText($subscription['days']);
-                        $message .= $subscription['name'] . " for " . $subscription['formatted_price'] . " (" . $dayText . ")\n";
-                    }
+                        $postfields = [
+                            'content' => $message
+                        ];
 
-                    $postfields = [
-                        'content' => $message
-                    ];
+                        if (!empty($discord['bot_username'])) {
+                            $postfields['username'] = $discord['bot_username'];
+                        }
 
-                    if (!empty($discord['bot_username'])) {
-                        $postfields['username'] = $discord['bot_username'];
-                    }
+                        if (!empty($discord['bot_avatar_url'])) {
+                            $postfields['avatar_url'] = $discord['bot_avatar_url'];
+                        }
 
-                    if (!empty($discord['bot_avatar_url'])) {
-                        $postfields['avatar_url'] = $discord['bot_avatar_url'];
-                    }
+                        $ch = curl_init();
 
-                    $ch = curl_init();
+                        curl_setopt($ch, CURLOPT_URL, $discord['webhook_url']);
+                        curl_setopt($ch, CURLOPT_POST, 1);
+                        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postfields));
+                        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                            'Content-Type: application/json'
+                        ]);
+                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+                        curl_setopt($ch, CURLOPT_RESOLVE, ["{$ssrf['host']}:{$ssrf['port']}:{$ssrf['ip']}"]);
 
-                    curl_setopt($ch, CURLOPT_URL, $discord['webhook_url']);
-                    curl_setopt($ch, CURLOPT_POST, 1);
-                    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postfields));
-                    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                        'Content-Type: application/json'
-                    ]);
-                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                        $response = curl_exec($ch);
 
-                    $response = curl_exec($ch);
-                    curl_close($ch);
+                        if ($response === false) {
+                            echo "Error sending notifications: " . curl_error($ch) . "<br />";
+                        } else {
+                            echo "Discord Notifications sent<br />";
+                        }
 
-                    if ($result === false) {
-                        echo "Error sending notifications: " . curl_error($ch) . "<br />";
-                    } else {
-                        echo "Discord Notifications sent<br />";
+                        unset($ch);
                     }
                 }
             }
 
             // Gotify notifications if enabled
             if ($gotifyNotificationsEnabled) {
-                foreach ($notify as $userId => $perUser) {
-                    // Get name of user from household table
-                    $stmt = $db->prepare('SELECT * FROM household WHERE id = :userId');
-                    $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
-                    $result = $stmt->execute();
-                    $user = $result->fetchArray(SQLITE3_ASSOC);
+                $ssrf = is_url_safe_for_ssrf($gotify['serverUrl'], $db, $userId);
+                if (!$ssrf) {
+                    echo "SSRF attempt detected for Gotify server URL. Notifications not sent.<br />";
+                } else {
+                    foreach ($notify as $userId => $perUser) {
+                        // Get name of user from household table
+                        $stmt = $db->prepare('SELECT * FROM household WHERE id = :userId');
+                        $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+                        $result = $stmt->execute();
+                        $user = $result->fetchArray(SQLITE3_ASSOC);
 
-                    if ($user['name']) {
-                        $message = $user['name'] . ", the following subscriptions are up for renewal:\n";
-                    } else {
-                        $message = "The following subscriptions are up for renewal:\n";
-                    }
+                        $name = $user['name'] ?? "";
+                        $message = buildNotificationMessage($name, $perUser, $periodSummaryLine, $sendPeriodStartSummaryOnly);
+                        if ($message === "") {
+                            continue;
+                        }
 
-                    foreach ($perUser as $subscription) {
-                        $dayText = getDaysText($subscription['days']);
-                        $message .= $subscription['name'] . " for " . $subscription['formatted_price'] . " (" . $dayText . ")\n";
-                    }
+                        $data = array(
+                            'message' => $message,
+                            'priority' => 5
+                        );
 
-                    $data = array(
-                        'message' => $message,
-                        'priority' => 5
-                    );
+                        $data_string = json_encode($data);
 
-                    $data_string = json_encode($data);
+                        $ch = curl_init($gotify['serverUrl'] . '/message?token=' . $gotify['appToken']);
+                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
+                        curl_setopt($ch, CURLOPT_POSTFIELDS, $data_string);
+                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+                        curl_setopt(
+                            $ch,
+                            CURLOPT_HTTPHEADER,
+                            array(
+                                'Content-Type: application/json',
+                                'Content-Length: ' . strlen($data_string)
+                            )
+                        );
 
-                    $ch = curl_init($gotify['serverUrl'] . '/message?token=' . $gotify['appToken']);
-                    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
-                    curl_setopt($ch, CURLOPT_POSTFIELDS, $data_string);
-                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                    curl_setopt(
-                        $ch,
-                        CURLOPT_HTTPHEADER,
-                        array(
-                            'Content-Type: application/json',
-                            'Content-Length: ' . strlen($data_string)
-                        )
-                    );
+                        if ($gotify['ignore_ssl']) {
+                            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                        }
+                        curl_setopt($ch, CURLOPT_RESOLVE, ["{$ssrf['host']}:{$ssrf['port']}:{$ssrf['ip']}"]);
 
-                    if ($gotify['ignore_ssl']) {
-                        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                    }
+                        $result = curl_exec($ch);
+                        if ($result === false) {
+                            echo "Error sending notifications: " . curl_error($ch) . "<br />";
+                        } else {
+                            echo "Gotify Notifications sent<br />";
+                        }
 
-                    $result = curl_exec($ch);
-                    if ($result === false) {
-                        echo "Error sending notifications: " . curl_error($ch) . "<br />";
-                    } else {
-                        echo "Gotify Notifications sent<br />";
+                        unset($ch);
                     }
                 }
             }
@@ -493,14 +586,13 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                     $user = $result->fetchArray(SQLITE3_ASSOC);
 
                     if ($user['name']) {
-                        $message = $user['name'] . ", the following subscriptions are up for renewal:\n";
+                        $name = $user['name'];
                     } else {
-                        $message = "The following subscriptions are up for renewal:\n";
+                        $name = "";
                     }
-
-                    foreach ($perUser as $subscription) {
-                        $dayText = getDaysText($subscription['days']);
-                        $message .= $subscription['name'] . " for " . $subscription['formatted_price'] . " (" . $dayText . ")\n";
+                    $message = buildNotificationMessage($name, $perUser, $periodSummaryLine, $sendPeriodStartSummaryOnly);
+                    if ($message === "") {
+                        continue;
                     }
 
                     $data = array(
@@ -514,6 +606,8 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
                     curl_setopt($ch, CURLOPT_POSTFIELDS, $data_string);
                     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
                     curl_setopt(
                         $ch,
                         CURLOPT_HTTPHEADER,
@@ -529,6 +623,8 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                     } else {
                         echo "Telegram Notifications sent<br />";
                     }
+
+                    unset($ch);
                 }
             }
 
@@ -543,16 +639,10 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                     $user = $result->fetchArray(SQLITE3_ASSOC);
 
                     // Build Message Content
-                    $messageContent = "";
-                    if ($user['name']) {
-                        $messageContent = $user['name'] . ", the following subscriptions are up for renewal:\n";
-                    } else {
-                        $messageContent = "The following subscriptions are up for renewal:\n";
-                    }
-
-                    foreach ($perUser as $subscription) {
-                        $dayText = getDaysText($subscription['days']);
-                        $messageContent .= $subscription['name'] . " for " . $subscription['formatted_price'] . " (" . $dayText . ")\n";
+                    $name = $user['name'] ?? "";
+                    $messageContent = buildNotificationMessage($name, $perUser, $periodSummaryLine, $sendPeriodStartSummaryOnly);
+                    if ($messageContent === "") {
+                        continue;
                     }
 
                     // Prepare PushPlus Data
@@ -569,6 +659,8 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
                     curl_setopt($ch, CURLOPT_POSTFIELDS, $data_string);
                     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
                     curl_setopt(
                         $ch,
                         CURLOPT_HTTPHEADER,
@@ -591,70 +683,71 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                             echo "PushPlus API error: " . $errorMsg . "<br />";
                         }
                     }
-                    curl_close($ch);
+                    unset($ch);
                 }
             }
 
             // Mattermost notifications if enabled
             if ($mattermostNotificationsEnabled) {
-                foreach ($notify as $userId => $perUser) {
-                    // Get name of user from household table
-                    $stmt = $db->prepare('SELECT * FROM household WHERE id = :userId');
-                    $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
-                    $result = $stmt->execute();
-                    $user = $result->fetchArray(SQLITE3_ASSOC);
+                $ssrf = is_url_safe_for_ssrf($mattermost['webhook_url'], $db, $userId);
+                if (!$ssrf) {
+                    echo "SSRF attempt detected for Mattermost webhook URL. Notifications not sent.<br />";
+                } else {
+                    foreach ($notify as $userId => $perUser) {
+                        // Get name of user from household table
+                        $stmt = $db->prepare('SELECT * FROM household WHERE id = :userId');
+                        $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+                        $result = $stmt->execute();
+                        $user = $result->fetchArray(SQLITE3_ASSOC);
 
-                    // Build Message Content
-                    $messageContent = "";
-                    if ($user['name']) {
-                        $messageContent = $user['name'] . ", the following subscriptions are up for renewal:\n";
-                    } else {
-                        $messageContent = "The following subscriptions are up for renewal:\n";
-                    }
-
-                    foreach ($perUser as $subscription) {
-                        $dayText = getDaysText($subscription['days']);
-                        $messageContent .= $subscription['name'] . " for " . $subscription['formatted_price'] . " (" . $dayText . ")\n";
-                    }
-
-                    // Prepare Mattermost Data
-                    $webhook_url = $mattermost['webhook_url'];
-                    $data = array(
-                        'username' => $mattermost['bot_username'],
-                        'icon_emoji' => $mattermost['bot_icon_emoji'],
-                        'text' => mb_convert_encoding($messageContent, 'UTF-8', 'auto'),
-                    );
-
-                    $data_string = json_encode($data);
-
-                    $ch = curl_init();
-                    curl_setopt($ch, CURLOPT_URL, $webhook_url);
-                    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
-                    curl_setopt($ch, CURLOPT_POSTFIELDS, $data_string);
-                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                    curl_setopt(
-                        $ch,
-                        CURLOPT_HTTPHEADER,
-                        array(
-                            'Content-Type: application/json'
-                        ),
-                    );
-
-                    $result = curl_exec($ch);
-                    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
-                    if ($result === false) {
-                        echo "Error sending Mattermost notifications: " . curl_error($ch) . "<br />";
-                    } else {
-                        $resultData = json_decode($result, true);
-                        if (isset($resultData['code']) && $resultData['code'] == 200) {
-                            echo "Mattermost Notifications sent successfully<br />";
-                        } else {
-                            $errorMsg = isset($resultData['msg']) ? $resultData['msg'] : 'Unknown error';
-                            echo "Mattermost API error: " . $errorMsg . "<br />";
+                        // Build Message Content
+                        $name = $user['name'] ?? "";
+                        $messageContent = buildNotificationMessage($name, $perUser, $periodSummaryLine, $sendPeriodStartSummaryOnly);
+                        if ($messageContent === "") {
+                            continue;
                         }
+                        // Prepare Mattermost Data
+                        $webhook_url = $mattermost['webhook_url'];
+                        $data = array(
+                            'username' => $mattermost['bot_username'],
+                            'icon_emoji' => $mattermost['bot_icon_emoji'],
+                            'text' => mb_convert_encoding($messageContent, 'UTF-8', 'auto'),
+                        );
+
+                        $data_string = json_encode($data);
+
+                        $ch = curl_init();
+                        curl_setopt($ch, CURLOPT_URL, $webhook_url);
+                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
+                        curl_setopt($ch, CURLOPT_POSTFIELDS, $data_string);
+                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+                        curl_setopt(
+                            $ch,
+                            CURLOPT_HTTPHEADER,
+                            array(
+                                'Content-Type: application/json'
+                            ),
+                        );
+                        curl_setopt($ch, CURLOPT_RESOLVE, ["{$ssrf['host']}:{$ssrf['port']}:{$ssrf['ip']}"]);
+
+                        $result = curl_exec($ch);
+                        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+                        if ($result === false) {
+                            echo "Error sending Mattermost notifications: " . curl_error($ch) . "<br />";
+                        } else {
+                            $resultData = json_decode($result, true);
+                            if (isset($resultData['code']) && $resultData['code'] == 200) {
+                                echo "Mattermost Notifications sent successfully<br />";
+                            } else {
+                                $errorMsg = isset($resultData['msg']) ? $resultData['msg'] : 'Unknown error';
+                                echo "Mattermost API error: " . $errorMsg . "<br />";
+                            }
+                        }
+                        unset($ch);
                     }
-                    curl_close($ch);
                 }
             }
 
@@ -668,14 +761,13 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                     $user = $result->fetchArray(SQLITE3_ASSOC);
 
                     if ($user['name']) {
-                        $message = $user['name'] . ", the following subscriptions are up for renewal:\n";
+                        $name = $user['name'];
                     } else {
-                        $message = "The following subscriptions are up for renewal:\n";
+                        $name = "";
                     }
-
-                    foreach ($perUser as $subscription) {
-                        $dayText = getDaysText($subscription['days']);
-                        $message .= $subscription['name'] . " for " . $subscription['formatted_price'] . " (" . $dayText . ")\n";
+                    $message = buildNotificationMessage($name, $perUser, $periodSummaryLine, $sendPeriodStartSummaryOnly);
+                    if ($message === "") {
+                        continue;
                     }
 
                     $ch = curl_init();
@@ -687,134 +779,150 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                         'message' => $message,
                     ]));
                     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
                     $result = curl_exec($ch);
-
-                    curl_close($ch);
 
                     if ($result === false) {
                         echo "Error sending notifications: " . curl_error($ch) . "<br />";
                     } else {
                         echo "Pushover Notifications sent<br />";
                     }
+
+                    unset($ch);
                 }
             }
 
             // Ntfy notifications if enabled
             if ($ntfyNotificationsEnabled) {
-                foreach ($notify as $userId => $perUser) {
-                    // Get name of user from household table
-                    $stmt = $db->prepare('SELECT * FROM household WHERE id = :userId');
-                    $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
-                    $result = $stmt->execute();
-                    $user = $result->fetchArray(SQLITE3_ASSOC);
+                $ssrf = is_url_safe_for_ssrf($ntfy['host'], $db, $userId);
+                if (!$ssrf) {
+                    echo "SSRF attempt detected for Ntfy host URL. Notifications not sent.<br />";
+                } else {
+                    foreach ($notify as $userId => $perUser) {
+                        // Get name of user from household table
+                        $stmt = $db->prepare('SELECT * FROM household WHERE id = :userId');
+                        $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+                        $result = $stmt->execute();
+                        $user = $result->fetchArray(SQLITE3_ASSOC);
 
-                    if ($user['name']) {
-                        $message = $user['name'] . ", the following subscriptions are up for renewal:\n";
-                    } else {
-                        $message = "The following subscriptions are up for renewal:\n";
-                    }
+                        $name = $user['name'] ?? "";
+                        $message = buildNotificationMessage($name, $perUser, $periodSummaryLine, $sendPeriodStartSummaryOnly);
+                        if ($message === "") {
+                            continue;
+                        }
 
-                    foreach ($perUser as $subscription) {
-                        $dayText = getDaysText($subscription['days']);
-                        $message .= $subscription['name'] . " for " . $subscription['formatted_price'] . " (" . $dayText . ")\n";
-                    }
+                        $headers = json_decode($ntfy["headers"], true);
+                        $customheaders = [];
 
-                    $headers = json_decode($ntfy["headers"], true);
-                    $customheaders = [];
+                        if (is_array($headers)) {
+                            $customheaders = array_map(function ($key, $value) {
+                                return "$key: $value";
+                            }, array_keys($headers), $headers);
+                        }
 
-                    if (is_array($headers)) {
-                        $customheaders = array_map(function ($key, $value) {
-                            return "$key: $value";
-                        }, array_keys($headers), $headers);
-                    }
+                        $ch = curl_init();
 
-                    $ch = curl_init();
+                        $ntfyHost = rtrim($ntfy["host"], '/');
+                        $ntfyTopic = $ntfy['topic'];
 
-                    $ntfyHost = rtrim($ntfy["host"], '/');
-                    $ntfyTopic = $ntfy['topic'];
+                        curl_setopt($ch, CURLOPT_URL, $ntfyHost . '/' . $ntfyTopic);
+                        curl_setopt($ch, CURLOPT_POST, 1);
+                        curl_setopt($ch, CURLOPT_POSTFIELDS, $message);
+                        $ntfyHeaders = array_merge(['Content-Type: text/plain; charset=utf-8'], $customheaders);
+                        curl_setopt($ch, CURLOPT_HTTPHEADER, $ntfyHeaders);
+                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
-                    curl_setopt($ch, CURLOPT_URL, $ntfyHost . '/' . $ntfyTopic);
-                    curl_setopt($ch, CURLOPT_POST, 1);
-                    curl_setopt($ch, CURLOPT_POSTFIELDS, $message);
-                    curl_setopt($ch, CURLOPT_HTTPHEADER, $customheaders);
-                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                        if ($ntfy['ignore_ssl']) {
+                            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                        }
+                        curl_setopt($ch, CURLOPT_RESOLVE, ["{$ssrf['host']}:{$ssrf['port']}:{$ssrf['ip']}"]);
 
-                    if ($ntfy['ignore_ssl']) {
-                        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                    }
+                        $response = curl_exec($ch);
 
-                    $response = curl_exec($ch);
-                    curl_close($ch);
+                        if ($response === false) {
+                            echo "Error sending notifications: " . curl_error($ch) . "<br />";
+                        } else {
+                            echo "Ntfy Notifications sent<br />";
+                        }
 
-                    if ($response === false) {
-                        echo "Error sending notifications: " . curl_error($ch) . "<br />";
-                    } else {
-                        echo "Ntfy Notifications sent<br />";
+                        unset($ch);
                     }
                 }
             }
 
             // Webhook notifications if enabled
             if ($webhookNotificationsEnabled) {
-                foreach ($notify as $userId => $perUser) {
-                    // Get name of user from household table
-                    $stmt = $db->prepare('SELECT * FROM household WHERE id = :userId');
-                    $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
-                    $result = $stmt->execute();
-                    $user = $result->fetchArray(SQLITE3_ASSOC);
-            
-                    if ($user['name']) {
-                        $payer = $user['name'];
-                    }
-            
-                    foreach ($perUser as $subscription) {
-                        // Ensure the payload is reset for each subscription
-                        $payload = $webhook['payload'];
-                        $payload = str_replace("{{days_until}}", $days, $payload);
-                        $payload = str_replace("{{subscription_name}}", $subscription['name'], $payload);
-                        $payload = str_replace("{{subscription_price}}", $subscription['formatted_price'], $payload);
-                        $payload = str_replace("{{subscription_currency}}", $subscription['currency'], $payload);
-                        $payload = str_replace("{{subscription_category}}", $subscription['category'], $payload);
-                        $payload = str_replace("{{subscription_payer}}", $payer, $payload); // Use $payer instead of $subscription['payer']
-                        $payload = str_replace("{{subscription_date}}", $subscription['date'], $payload);
-                        $payload = str_replace("{{subscription_days_until_payment}}", $subscription['days'], $payload);
-                        $payload = str_replace("{{subscription_url}}", $subscription['url'], $payload);
-                        $payload = str_replace("{{subscription_notes}}", $subscription['notes'], $payload);
-            
-                        // Initialize cURL for each subscription
-                        $ch = curl_init();
-                        curl_setopt($ch, CURLOPT_URL, $webhook['url']);
-                        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $webhook['request_method']);
-                        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-            
-                        // Add headers if they exist
-                        if (!empty($webhook['headers'])) {
-                            $customheaders = json_decode($webhook["headers"], true);
-                            curl_setopt($ch, CURLOPT_HTTPHEADER, $customheaders);
+                $ssrf = is_url_safe_for_ssrf($webhook['url'], $db, $userId);
+                if (!$ssrf) {
+                    echo "SSRF attempt detected for webhook URL. Notifications not sent.<br />";;
+                } else {
+                    foreach ($notify as $userId => $perUser) {
+                        // Get name of user from household table
+                        $stmt = $db->prepare('SELECT * FROM household WHERE id = :userId');
+                        $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
+                        $result = $stmt->execute();
+                        $user = $result->fetchArray(SQLITE3_ASSOC);
+                
+                        if ($user['name']) {
+                            $payer = $user['name'];
                         }
-            
-                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            
-                        // Handle SSL settings
-                        if ($webhook['ignore_ssl']) {
-                            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                
+                        foreach ($perUser as $subscription) {
+                            // Ensure the payload is reset for each subscription
+                            $payload = $webhook['payload'];
+                            $payload = str_replace("{{days_until}}", $days, $payload);
+                            $payload = str_replace("{{subscription_name}}", $subscription['name'], $payload);
+                            $payload = str_replace("{{subscription_price}}", $subscription['formatted_price'], $payload);
+                            $payload = str_replace("{{subscription_currency}}", $subscription['currency'], $payload);
+                            $payload = str_replace("{{subscription_category}}", $subscription['category'], $payload);
+                            $payload = str_replace("{{subscription_payer}}", $payer, $payload); // Use $payer instead of $subscription['payer']
+                            $payload = str_replace("{{subscription_date}}", $subscription['date'], $payload);
+                            $payload = str_replace("{{subscription_days_until_payment}}", $subscription['days'], $payload);
+                            $payload = str_replace("{{subscription_url}}", $subscription['url'], $payload);
+                            $payload = str_replace("{{subscription_notes}}", $subscription['notes'], $payload);
+                
+                            // Initialize cURL for each subscription
+                            $ch = curl_init();
+                            curl_setopt($ch, CURLOPT_URL, $webhook['url']);
+                            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $webhook['request_method']);
+                            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+                
+                            // Add headers if they exist
+                            if (!empty($webhook['headers'])) {
+                                $customheaders = json_decode($webhook["headers"], true);
+                                curl_setopt($ch, CURLOPT_HTTPHEADER, $customheaders);
+                            }
+                
+                            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+                
+                            // Handle SSL settings
+                            if ($webhook['ignore_ssl']) {
+                                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                            }
+                            curl_setopt($ch, CURLOPT_RESOLVE, ["{$ssrf['host']}:{$ssrf['port']}:{$ssrf['ip']}"]);
+                
+                            // Execute the cURL request
+                            $response = curl_exec($ch);
+                            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                
+                            if ($response === false || $httpCode >= 400) {
+                                echo "Error sending notifications: " . curl_error($ch) . "<br />";
+                            } else {
+                                echo "Webhook Notification sent for subscription: " . $subscription['name'] . "<br />";
+                            }
+
+                            unset($ch);
+                
+                            usleep(1000000); // 1s delay between requests
                         }
-            
-                        // Execute the cURL request
-                        $response = curl_exec($ch);
-                        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                        curl_close($ch);
-            
-                        if ($response === false || $httpCode >= 400) {
-                            echo "Error sending notifications: " . curl_error($ch) . "<br />";
-                        } else {
-                            echo "Webhook Notification sent for subscription: " . $subscription['name'] . "<br />";
-                        }
-            
-                        usleep(1000000); // 1s delay between requests
                     }
                 }
             }
@@ -829,15 +937,10 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                     $user = $result->fetchArray(SQLITE3_ASSOC);
 
                     $title = 'Wallos Notification';
-                    if ($user['name']) {
-                        $message = $user['name'] . ", the following subscriptions are up for renewal:\n";
-                    } else {
-                        $message = "The following subscriptions are up for renewal:\n";
-                    }
-
-                    foreach ($perUser as $subscription) {
-                        $dayText = getDaysText($subscription['days']);
-                        $message .= $subscription['name'] . " for " . $subscription['formatted_price'] . " (" . $dayText . ")\n";
+                    $name = $user['name'] ?? "";
+                    $message = buildNotificationMessage($name, $perUser, $periodSummaryLine, $sendPeriodStartSummaryOnly);
+                    if ($message === "") {
+                        continue;
                     }
 
                     // Build Serverchan request
@@ -860,16 +963,18 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
                         'Content-Type: application/x-www-form-urlencoded'
                     ]);
                     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
                     $response = curl_exec($ch);
                     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
                     if ($response === false || $httpCode >= 400) {
                         $errorMessage = $response === false ? curl_error($ch) : $httpCode;
-                        curl_close($ch);
+                        unset($ch);
                         echo "Error sending Serverchan notifications: " . $errorMessage . "<br />";
                     } else {
-                        curl_close($ch);
+                        unset($ch);
                         echo "Serverchan Notifications sent<br />";
                     }
                 }
@@ -884,5 +989,3 @@ while ($userToNotify = $usersToNotify->fetchArray(SQLITE3_ASSOC)) {
     }
 
 }
-
-?>

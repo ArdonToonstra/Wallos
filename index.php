@@ -2,6 +2,7 @@
 
 require_once 'includes/header.php';
 require_once 'includes/getdbkeys.php';
+require_once 'includes/logo_theme_variant.php';
 
 function formatPrice($price, $currencyCode, $currencies)
 {
@@ -32,20 +33,31 @@ function formatDate($date, $lang = 'en')
     // Determine the date format based on whether the year matches the current year
     $dateFormat = ($currentYear == $dateYear) ? 'MMM d' : 'MMM yyyy';
 
-    // Validate the locale and fallback to 'en' if unsupported
-    if (!in_array($lang, ResourceBundle::getLocales(''))) {
-        $lang = 'en'; // Fallback to English
-    }
+    // Try to create an IntlDateFormatter; if it fails, fallback to 'en'
+    try {
+        $formatter = new IntlDateFormatter(
+            $lang,
+            IntlDateFormatter::SHORT,
+            IntlDateFormatter::NONE,
+            null,
+            null,
+            $dateFormat
+        );
 
-    // Create an IntlDateFormatter instance for the specified language
-    $formatter = new IntlDateFormatter(
-        $lang,
-        IntlDateFormatter::SHORT,
-        IntlDateFormatter::NONE,
-        null,
-        null,
-        $dateFormat
-    );
+        if (!$formatter) {
+            throw new Exception('Failed to create IntlDateFormatter with language: ' . $lang);
+        }
+    } catch (Throwable $e) {
+        $lang = 'en'; // Fallback to English on error
+        $formatter = new IntlDateFormatter(
+            $lang,
+            IntlDateFormatter::SHORT,
+            IntlDateFormatter::NONE,
+            null,
+            null,
+            $dateFormat
+        );
+    }
 
     // Format the date
     $formattedDate = $formatter->format(new DateTime($date));
@@ -61,7 +73,7 @@ $user = $result->fetchArray(SQLITE3_ASSOC);
 $first_name = $user['firstname'] ?? $user['username'] ?? '';
 
 // Fetch the next 3 enabled subscriptions up for payment
-$stmt = $db->prepare("SELECT id, logo, name, price, share_percentage, currency_id, next_payment, inactive FROM subscriptions WHERE user_id = :userId AND next_payment >= date('now') AND inactive = 0 ORDER BY next_payment ASC LIMIT 3");
+$stmt = $db->prepare("SELECT id, logo, logo_text_color, logo_variant, name, price, share_percentage, currency_id, next_payment, inactive FROM subscriptions WHERE user_id = :userId AND next_payment >= date('now') AND inactive = 0 AND cycle != 5 ORDER BY next_payment ASC LIMIT 3");
 $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
 $result = $stmt->execute();
 $upcomingSubscriptions = [];
@@ -70,7 +82,7 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
 }
 
 // Fetch enabled subscriptions with manual renewal that are overdue
-$stmt = $db->prepare("SELECT id, logo, name, price, share_percentage, currency_id, next_payment, inactive, auto_renew FROM subscriptions WHERE user_id = :userId AND next_payment < date('now') AND auto_renew = 0 AND inactive = 0 ORDER BY next_payment ASC");
+$stmt = $db->prepare("SELECT id, logo, logo_text_color, logo_variant, name, price, share_percentage, currency_id, next_payment, inactive, auto_renew FROM subscriptions WHERE user_id = :userId AND next_payment < date('now') AND auto_renew = 0 AND inactive = 0 AND cycle != 5 ORDER BY next_payment ASC");
 $stmt->bindValue(':userId', $userId, SQLITE3_INTEGER);
 $result = $stmt->execute();
 $overdueSubscriptions = [];
@@ -93,6 +105,32 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
 ?>
 
 <section class="contain dashboard">
+    <?php
+        if ($isAdmin && $settings['update_notification']) {
+            if (!is_null($settings['latest_version'])) {
+                $latestVersion = $settings['latest_version'];
+                if (version_compare($version, $latestVersion) == -1) {
+                    ?>
+                    <div class="update-banner">
+                    <?= translate('new_version_available', $i18n) ?>:
+                        <span><a href="https://github.com/ellite/Wallos/releases/tag/<?= htmlspecialchars($latestVersion) ?>"
+                        target="_blank" rel="noreferer">
+                        <?= htmlspecialchars($latestVersion) ?>
+                        </a></span>
+                    </div>
+                    <?php
+                }
+            }
+        }
+        if ($demoMode) {
+            ?>
+            <div class="demo-banner">
+            Running in <b>Demo Mode</b>, certain actions and settings are disabled.<br>
+            The database will be reset every 120 minutes.
+            </div>
+            <?php
+        }
+    ?>
     <h1><?= translate('hello', $i18n) ?> <?= htmlspecialchars($first_name) ?></h1>
 
     <?php
@@ -106,31 +144,29 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                     <?php
 
                     foreach ($overdueSubscriptions as $subscription) {
-                        $subscriptionLogo = "images/uploads/logos/" . $subscription['logo'];
                         $subscriptionName = htmlspecialchars($subscription['name']);
                         $sharePercentage = isset($subscription['share_percentage']) ? (int) $subscription['share_percentage'] : 100;
                         $subscriptionPrice = floatval($subscription['price']) * ($sharePercentage / 100);
                         $subscriptionCurrency = $subscription['currency_id'];
                         $subscriptionNextPayment = $subscription['next_payment'];
-                        $subscriptionDisplayNextPayment = date('F j', strtotime($subscriptionNextPayment));
+                        $subscriptionDisplayNextPayment = formatDate($subscriptionNextPayment, $lang);
                         $subscriptionDisplayPrice = formatPrice($subscriptionPrice, $currencies[$subscriptionCurrency]['code'], $currencies);
 
                         ?>
-                        <div class="subscription-item">
+                        <div class="subscription-item" onClick="showSubscriptionDetails(event, <?= $subscription['id'] ?>)" data-id="<?= $subscription['id'] ?>">
                             <?php
                             if (empty($subscription['logo'])) {
                                 ?>
                                 <p class="subscription-item-title"><?= $subscriptionName ?></p>
                                 <?php
                             } else {
-                                ?>
-                                <img src="<?= $subscriptionLogo ?>" alt="<?= $subscriptionName ?> logo"
-                                    class="subscription-item-logo" title="<?= $subscriptionName ?>">
-                                <?php
+                                $subscriptionLogoSrc = "images/uploads/logos/" . $subscription['logo'];
+                                $subscriptionLogoVariantSrc = !empty($subscription['logo_variant']) ? "images/uploads/logos/" . $subscription['logo_variant'] : null;
+                                echo renderThemedLogoImg($subscriptionLogoSrc, $subscriptionLogoVariantSrc, $subscription['logo_text_color'] ?? null, 'subscription-item-logo', 'alt="' . $subscriptionName . ' logo" title="' . $subscriptionName . '"');
                             }
                             ?>
                             <div class="subscription-item-info">
-                                <p class="subscription-item-date"> <?= formatDate($subscriptionDisplayNextPayment, $lang) ?>
+                                <p class="subscription-item-date"> <?= $subscriptionDisplayNextPayment ?>
                                 </p>
                                 <p class="subscription-item-price"> <?= $subscriptionDisplayPrice ?></p>
                             </div>
@@ -156,31 +192,29 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                     <?php
                 } else {
                     foreach ($upcomingSubscriptions as $subscription) {
-                        $subscriptionLogo = "images/uploads/logos/" . $subscription['logo'];
                         $subscriptionName = htmlspecialchars($subscription['name']);
                         $sharePercentage = isset($subscription['share_percentage']) ? (int) $subscription['share_percentage'] : 100;
                         $subscriptionPrice = floatval($subscription['price']) * ($sharePercentage / 100);
                         $subscriptionCurrency = $subscription['currency_id'];
                         $subscriptionNextPayment = $subscription['next_payment'];
-                        $subscriptionDisplayNextPayment = date('F j', strtotime($subscriptionNextPayment));
+                        $subscriptionDisplayNextPayment = formatDate($subscriptionNextPayment, $lang);
                         $subscriptionDisplayPrice = formatPrice($subscriptionPrice, $currencies[$subscriptionCurrency]['code'], $currencies);
 
                         ?>
-                        <div class="subscription-item">
+                        <div class="subscription-item" onClick="showSubscriptionDetails(event, <?= $subscription['id'] ?>)" data-id="<?= $subscription['id'] ?>">
                             <?php
                             if (empty($subscription['logo'])) {
                                 ?>
                                 <p class="subscription-item-title"><?= $subscriptionName ?></p>
                                 <?php
                             } else {
-                                ?>
-                                <img src="<?= $subscriptionLogo ?>" alt="<?= $subscriptionName ?> logo"
-                                    class="subscription-item-logo" title="<?= $subscriptionName ?>">
-                                <?php
+                                $subscriptionLogoSrc = "images/uploads/logos/" . $subscription['logo'];
+                                $subscriptionLogoVariantSrc = !empty($subscription['logo_variant']) ? "images/uploads/logos/" . $subscription['logo_variant'] : null;
+                                echo renderThemedLogoImg($subscriptionLogoSrc, $subscriptionLogoVariantSrc, $subscription['logo_text_color'] ?? null, 'subscription-item-logo', 'alt="' . $subscriptionName . ' logo" title="' . $subscriptionName . '"');
                             }
                             ?>
                             <div class="subscription-item-info">
-                                <p class="subscription-item-date"> <?= formatDate($subscriptionDisplayNextPayment, $lang) ?></p>
+                                <p class="subscription-item-date"> <?= $subscriptionDisplayNextPayment ?></p>
                                 <p class="subscription-item-price"> <?= $subscriptionDisplayPrice ?></p>
                             </div>
                         </div>
@@ -224,57 +258,110 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
 
         <?php } ?>
 
-        <?php if (isset($amountDueThisMonth) || isset($budget) || isset($budgetUsed) || isset($budgetLeft) || isset($overBudgetAmount)) { ?>
+        <?php if (isset($totalCostPerMonth)) { ?>
             <div class="budget-subscriptions">
-                <h2><?= translate('your_budget', $i18n) ?></h2>
+                <h2><?= translate('monthly_budget', $i18n) ?></h2>
                 <div class="dashboard-subscriptions-container">
                     <div class="dashboard-subscriptions-list">
-                        <?php if (isset($amountDueThisMonth)) { ?>
-                            <div class="subscription-item thin">
-                                <p class="subscription-item-title"><?= translate("amount_due", $i18n) ?></p>
-                                <div class="subscription-item-info">
-                                    <p class="subscription-item-value">
-                                        <?= CurrencyFormatter::format($amountDueThisMonth, $currencies[$userData['main_currency']]['code']) ?>
-                                    </p>
-                                </div>
+                        <div class="subscription-item thin">
+                            <p class="subscription-item-title"><?= translate("monthly_cost", $i18n) ?></p>
+                            <div class="subscription-item-info">
+                                <p class="subscription-item-value">
+                                    <?= CurrencyFormatter::format($totalCostPerMonth, $currencies[$userData['main_currency']]['code']) ?>
+                                </p>
                             </div>
-                        <?php } ?>
-                        <?php if (isset($budget) && $budget > 0) { ?>
+                        </div>
+                        <?php if (isset($monthlyBudget) && $monthlyBudget > 0) { ?>
                             <div class="subscription-item thin">
                                 <p class="subscription-item-title"><?= translate("budget", $i18n) ?></p>
                                 <div class="subscription-item-info">
                                     <p class="subscription-item-value">
-                                        <?= formatPrice($budget, $currencies[$userData['main_currency']]['code'], $currencies) ?>
+                                        <?= formatPrice($monthlyBudget, $currencies[$userData['main_currency']]['code'], $currencies) ?>
                                     </p>
                                 </div>
                             </div>
-                        <?php } ?>
-                        <?php if (isset($budgetUsed)) { ?>
-                            <div class="subscription-item thin">
-                                <p class="subscription-item-title"><?= translate("budget_used", $i18n) ?></p>
-                                <div class="subscription-item-info">
-                                    <p class="subscription-item-value">
-                                        <?= number_format($budgetUsed, 2) ?>%
-                                    </p>
+                            <?php if (isset($monthlyBudgetUsed)) { ?>
+                                <div class="subscription-item thin">
+                                    <p class="subscription-item-title"><?= translate("budget_used", $i18n) ?></p>
+                                    <div class="subscription-item-info">
+                                        <p class="subscription-item-value">
+                                            <?= number_format($monthlyBudgetUsed, 2) ?>%
+                                        </p>
+                                    </div>
                                 </div>
-                            </div>
-                        <?php } ?>
-                        <?php if (isset($budgetLeft)) { ?>
+                            <?php } ?>
                             <div class="subscription-item thin">
                                 <p class="subscription-item-title"><?= translate("budget_remaining", $i18n) ?></p>
                                 <div class="subscription-item-info">
                                     <p class="subscription-item-value">
-                                        <?= formatPrice($budgetLeft, $currencies[$userData['main_currency']]['code'], $currencies) ?>
+                                        <?= formatPrice($monthlyBudgetLeft, $currencies[$userData['main_currency']]['code'], $currencies) ?>
+                                    </p>
+                                </div>
+                            </div>
+                            <?php if (isset($monthlyOverBudgetAmount) && $monthlyOverBudgetAmount > 0) { ?>
+                                <div class="subscription-item thin">
+                                    <p class="subscription-item-title"><?= translate("over_budget", $i18n) ?></p>
+                                    <div class="subscription-item-info">
+                                        <p class="subscription-item-value">
+                                            <?= formatPrice($monthlyOverBudgetAmount, $currencies[$userData['main_currency']]['code'], $currencies) ?>
+                                        </p>
+                                    </div>
+                                </div>
+                            <?php } ?>
+                        <?php } ?>
+                    </div>
+                </div>
+            </div>
+        <?php } ?>
+
+        <?php if (isset($periodBudget) && $periodBudget > 0) { ?>
+            <div class="budget-subscriptions">
+                <h2><?= translate('period_budget', $i18n) ?></h2>
+                <?php if (isset($budgetPeriodLabel)) { ?>
+                    <p class="header-subtitle"><?= translate('current_period', $i18n) ?>: <?= htmlspecialchars($budgetPeriodLabel, ENT_QUOTES, 'UTF-8') ?></p>
+                <?php } ?>
+                <div class="dashboard-subscriptions-container">
+                    <div class="dashboard-subscriptions-list">
+                        <div class="subscription-item thin">
+                            <p class="subscription-item-title"><?= translate("amount_needed_this_period", $i18n) ?></p>
+                            <div class="subscription-item-info">
+                                <p class="subscription-item-value">
+                                    <?= CurrencyFormatter::format($amountNeededThisPeriod, $currencies[$userData['main_currency']]['code']) ?>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="subscription-item thin">
+                            <p class="subscription-item-title"><?= translate("budget", $i18n) ?></p>
+                            <div class="subscription-item-info">
+                                <p class="subscription-item-value">
+                                    <?= formatPrice($periodBudget, $currencies[$userData['main_currency']]['code'], $currencies) ?>
+                                </p>
+                            </div>
+                        </div>
+                        <?php if (isset($periodBudgetUsed)) { ?>
+                            <div class="subscription-item thin">
+                                <p class="subscription-item-title"><?= translate("budget_used", $i18n) ?></p>
+                                <div class="subscription-item-info">
+                                    <p class="subscription-item-value">
+                                        <?= number_format($periodBudgetUsed, 2) ?>%
                                     </p>
                                 </div>
                             </div>
                         <?php } ?>
-                        <?php if (isset($overBudgetAmount) && $overBudgetAmount > 0) { ?>
+                        <div class="subscription-item thin">
+                            <p class="subscription-item-title"><?= translate("budget_remaining", $i18n) ?></p>
+                            <div class="subscription-item-info">
+                                <p class="subscription-item-value">
+                                    <?= formatPrice($periodBudgetLeft, $currencies[$userData['main_currency']]['code'], $currencies) ?>
+                                </p>
+                            </div>
+                        </div>
+                        <?php if (isset($periodOverBudgetAmount) && $periodOverBudgetAmount > 0) { ?>
                             <div class="subscription-item thin">
                                 <p class="subscription-item-title"><?= translate("over_budget", $i18n) ?></p>
                                 <div class="subscription-item-info">
                                     <p class="subscription-item-value">
-                                        <?= formatPrice($overBudgetAmount, $currencies[$userData['main_currency']]['code'], $currencies) ?>
+                                        <?= formatPrice($periodOverBudgetAmount, $currencies[$userData['main_currency']]['code'], $currencies) ?>
                                     </p>
                                 </div>
                             </div>
@@ -361,6 +448,18 @@ while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
 
 </section>
 
+<?php
+// Get all subscriptions for user details lookup
+$query = 'SELECT * FROM subscriptions WHERE user_id = :userId';
+$stmt = $db->prepare($query);
+$stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
+$result = $stmt->execute();
+$subscriptions = [];
+while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+    $subscriptions[] = $row;
+}
+require_once 'includes/subscription_details_popup.php';
+?>
 
 <script src="scripts/dashboard.js?<?= $version ?>"></script>
 

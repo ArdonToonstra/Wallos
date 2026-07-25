@@ -9,7 +9,15 @@ require_once 'includes/i18n/' . $lang . '.php';
 
 require_once 'includes/version.php';
 
-session_start();
+$secondsInMonth = 30 * 24 * 60 * 60;
+if (session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'lifetime' => $secondsInMonth,             
+        'httponly' => true,          
+        'samesite' => 'Lax'          
+    ]);
+    session_start();
+}
 if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
     $db->close();
     header("Location: .");
@@ -32,6 +40,7 @@ if (isset($_COOKIE['colorTheme'])) {
 $settings = $db->querySingle("SELECT * FROM admin", true);
 if ($settings['smtp_address'] == "" || $settings['server_url'] == "") {
     header("Location: .");
+    exit();
 } else {
     $resetPasswordEnabled = true;
 }
@@ -71,7 +80,7 @@ if (isset($_GET['token']) && $_GET['token'] != "" && isset($_GET['email']) && $_
     $resetMode = true;
     $token = $_GET['token'];
     $email = $_GET['email'];
-    $matchCount = "SELECT COUNT(*) FROM password_resets WHERE token = :token and email = :email";
+    $matchCount = "SELECT COUNT(*) FROM password_resets WHERE token = :token AND email = :email AND created_at > datetime('now', '-1 hour')";
     $stmt = $db->prepare($matchCount);
     $stmt->bindValue(':token', $token, SQLITE3_TEXT);
     $stmt->bindValue(':email', $email, SQLITE3_TEXT);
@@ -89,7 +98,7 @@ if (isset($_POST['password']) && $_POST['password'] != "" && isset($_POST['confi
     $confirmPassword = $_POST['confirm_password'];
     $token = $_POST['token'];
     $email = $_POST['email'];
-    $resetQuery = "SELECT * FROM password_resets WHERE token = :token AND email = :email";
+    $resetQuery = "SELECT * FROM password_resets WHERE token = :token AND email = :email AND created_at > datetime('now', '-1 hour')";
     $stmt = $db->prepare($resetQuery);
     $stmt->bindValue(':token', $token, SQLITE3_TEXT);
     $stmt->bindValue(':email', $email, SQLITE3_TEXT);
@@ -103,8 +112,14 @@ if (isset($_POST['password']) && $_POST['password'] != "" && isset($_POST['confi
         
         if ($password == $confirmPassword) {
             $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-            $db->exec("UPDATE user SET password = '$passwordHash' WHERE id = " . $user['id']);
-            $db->exec("DELETE FROM password_resets WHERE token = '$token'");
+            $stmt = $db->prepare("UPDATE user SET password = :password WHERE id = :id");
+            $stmt->bindValue(':password', $passwordHash, SQLITE3_TEXT);
+            $stmt->bindValue(':id', $user['id'], SQLITE3_INTEGER);
+            $stmt->execute();
+
+            $stmt = $db->prepare("DELETE FROM password_resets WHERE token = :token");
+            $stmt->bindValue(':token', $token, SQLITE3_TEXT);
+            $stmt->execute();
             $hasSuccessMessage = true;
             $hideForm = true;
         } else {
@@ -124,7 +139,7 @@ if (isset($_POST['password']) && $_POST['password'] != "" && isset($_POST['confi
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="<?= $theme == "light" ? "#FFFFFF" : "#222222" ?>" />
+    <meta name="theme-color" content="<?= $theme == "light" ? "#FFFFFF" : "#12151C" ?>" />
     <meta name="apple-mobile-web-app-title" content="Wallos">
     <title>Wallos - Subscription Tracker</title>
     <link rel="icon" type="image/png" href="images/icon/favicon.ico" sizes="16x16">
@@ -141,10 +156,26 @@ if (isset($_POST['password']) && $_POST['password'] != "" && isset($_POST['confi
     <link rel="stylesheet" href="styles/font-awesome.min.css">
     <link rel="stylesheet" href="styles/barlow.css">
     <link rel="stylesheet" href="styles/login-dark-theme.css?<?= $version ?>" id="dark-theme" <?= $theme == "light" ? "disabled" : "" ?>>
+    <script type="text/javascript" src="scripts/auth-theme.js?<?= $version ?>"></script>
+    <script type="text/javascript" src="scripts/password-toggle.js?<?= $version ?>"></script>
 </head>
 
 <body class="<?= $languages[$lang]['dir'] ?>">
-    <div class="content">
+    <button type="button" class="theme-toggle" id="theme-toggle" title="<?= translate('theme', $i18n) ?>"
+        aria-label="<?= translate('theme', $i18n) ?>">
+        <i class="fa-solid <?= $theme == "dark" ? "fa-sun" : "fa-moon" ?>"></i>
+    </button>
+    <div class="content auth-split">
+        <aside class="auth-brand" aria-hidden="true">
+            <div class="auth-brand-logo">
+                <?php include "images/siteicons/svg/logo.php"; ?>
+            </div>
+            <div class="auth-brand-text">
+                <h1><?= translate('auth_tagline', $i18n) ?></h1>
+                <p><?= translate('auth_tagline_sub', $i18n) ?></p>
+            </div>
+            <div class="auth-brand-footer">Wallos &mdash; Subscription Tracker</div>
+        </aside>
         <section class="container">
             <header>
                 <div class="logo-image" title="Wallos - Subscription Tracker">
@@ -187,8 +218,8 @@ if (isset($_POST['password']) && $_POST['password'] != "" && isset($_POST['confi
                     if (!$hideForm) {
                         ?>
                         <div class="form-group">
-                            <input type="hidden" name="token" value="<?= $token ?>">
-                            <input type="hidden" name="email" value="<?= $email ?>">
+                            <input type="hidden" name="token" value="<?= htmlspecialchars($token ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                            <input type="hidden" name="email" value="<?= htmlspecialchars($email ?? '', ENT_QUOTES, 'UTF-8') ?>">
                             <label for="password"><?= translate('password', $i18n) ?>:</label>
                             <input type="password" id="password" name="password" autocomplete="new-password" required>
                         </div>
@@ -239,4 +270,4 @@ if (isset($_POST['password']) && $_POST['password'] != "" && isset($_POST['confi
     </script>
 </body>
 
-</html>
+</html>

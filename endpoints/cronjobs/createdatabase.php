@@ -128,7 +128,8 @@ if (!file_exists($databaseFile)) {
     (1, 1, 'Daily'),
     (2, 7, 'Weekly'),
     (3, 30, 'Monthly'),
-    (4, 365, 'Yearly')");
+    (4, 365, 'Yearly'),
+    (5, 0, 'One-time')");
 
     $db->exec("INSERT INTO frequencies (id, name) VALUES
     (1, 1),
@@ -232,7 +233,10 @@ if (!file_exists($databaseFile)) {
     (30, 'VeriFone', 'verifone.png'),
     (31, 'WebMoney', 'webmoney.png')");
 
+    $setupToken = bin2hex(random_bytes(32));
+    file_put_contents(__DIR__ . '/../../db/setup_token.db', $setupToken);
     echo "Database created.\n";
+    echo "Setup token for database restore: " . $setupToken . "\n";
 } else {
     echo "Database already exist. Checking for upgrades...\n";
 

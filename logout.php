@@ -1,16 +1,23 @@
 <?php
 require_once 'includes/connect.php';
-session_start();
+require_once 'includes/oidc_settings.php';
+$secondsInMonth = 30 * 24 * 60 * 60;
+if (session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'lifetime' => $secondsInMonth,             
+        'httponly' => true,          
+        'samesite' => 'Lax'          
+    ]);
+    session_start();
+}
 
 $logoutOIDC = false;
 
 // Check if user is logged in with OIDC
 if (isset($_SESSION['from_oidc']) && $_SESSION['from_oidc'] === true) {
     $logoutOIDC = true;
-    // get OIDC settings
-    $stmt = $db->prepare('SELECT * FROM oauth_settings WHERE id = 1');
-    $result = $stmt->execute();
-    $oidcSettings = $result->fetchArray(SQLITE3_ASSOC);
+    $oidcConfiguration = wallos_get_effective_oidc_configuration($db);
+    $oidcSettings = $oidcConfiguration['settings'];
     $logoutUrl = $oidcSettings['logout_url'] ?? '';
 }
 
@@ -35,5 +42,22 @@ if ($logoutOIDC && !empty($logoutUrl)) {
     exit();
 }
 
-header("Location: .");
+?>
+<!DOCTYPE html>
+<html>
+<head>
+<script>
+  async function clearAndRedirect() {
+    if ('caches' in window) {
+      await caches.delete('pages-cache-v1');
+    }
+    sessionStorage.removeItem('sw_prefetched');
+    window.location.href = '.';
+  }
+  clearAndRedirect();
+</script>
+</head>
+<body></body>
+</html>
+<?php
 exit();

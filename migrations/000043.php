@@ -1,33 +1,24 @@
 <?php
 
-/* 
-* This migration adds a share_percentage column to subscriptions and inserts new default categories
+/* * This migration adds a column to the admin table to store a comma-separated 
+* allowlist of hostnames and IPs that can be used in webhook notifications. 
+* This prevents SSRF attacks on internal services.
 */
 
-$columnExists = $db->querySingle("SELECT COUNT(*) FROM pragma_table_info('subscriptions') WHERE name='share_percentage'");
-if (!$columnExists) {
-    $db->exec("ALTER TABLE subscriptions ADD COLUMN share_percentage INTEGER DEFAULT 100");
+// Check if the column already exists to prevent errors on multiple runs
+$query = $db->query("PRAGMA table_info(admin)");
+$columnExists = false;
+
+while ($row = $query->fetchArray(SQLITE3_ASSOC)) {
+    if ($row['name'] === 'local_webhook_notifications_allowlist') {
+        $columnExists = true;
+        break;
+    }
 }
 
-$usersQuery = $db->query("SELECT id FROM user");
-if ($usersQuery) {
-    while ($user = $usersQuery->fetchArray(SQLITE3_ASSOC)) {
-        $userId = $user['id'];
-        
-        $investingExists = $db->querySingle("SELECT COUNT(*) FROM categories WHERE name='Investing' AND user_id=$userId");
-        if (!$investingExists) {
-            $stmt = $db->prepare('INSERT INTO categories (name, "order", user_id) VALUES ("Investing", 18, :userId)');
-            $stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
-            $stmt->execute();
-        }
-
-        $housingExists = $db->querySingle("SELECT COUNT(*) FROM categories WHERE name='Housing' AND user_id=$userId");
-        if (!$housingExists) {
-            $stmt = $db->prepare('INSERT INTO categories (name, "order", user_id) VALUES ("Housing", 19, :userId)');
-            $stmt->bindParam(':userId', $userId, SQLITE3_INTEGER);
-            $stmt->execute();
-        }
-    }
+if (!$columnExists) {
+    // Add the column with an empty string as the default
+    $db->exec("ALTER TABLE admin ADD COLUMN local_webhook_notifications_allowlist TEXT DEFAULT ''");
 }
 
 ?>

@@ -36,7 +36,8 @@ if (!isset($data["token"]) || $data["token"] == "") {
         CURLOPT_HTTPHEADER => [
             'Content-Type: application/json'
         ],
-        CURLOPT_TIMEOUT => 10
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_CONNECTTIMEOUT => 5
     ]);
 
     // Execute the request
@@ -45,7 +46,7 @@ if (!isset($data["token"]) || $data["token"] == "") {
     $curlError = curl_error($ch);
 
     // Close the cURL session
-    curl_close($ch);
+    unset($ch);
 
     // Check if the message was sent successfully
     if ($response === false) {
