@@ -1,5 +1,5 @@
-# Use the php:8.3-fpm-alpine base image
-FROM php:8.3-fpm-alpine
+# Pinned to 8.3.36+ for CVE-2026-109618 / CVE-2026-109619
+FROM php:8.3.36-fpm-alpine
 
 # Set working directory to /var/www/html
 WORKDIR /var/www/html
